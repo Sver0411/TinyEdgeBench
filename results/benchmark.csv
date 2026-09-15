@@ -1,0 +1,5 @@
+method,accuracy,macro_precision,macro_recall,macro_f1,parameters,size_bytes,size_detail
+rule,0.6963,0.7976,0.6814,0.6604,5,20,5 thresholds
+logistic,0.8283,0.8342,0.8244,0.8256,52,208,32 weights + 4 biases + 16 scaler
+tree,0.8203,0.8385,0.8166,0.8167,57,281,28 internal nodes + 29 leaves
+mlp,0.825,0.832,0.8207,0.8214,196,784,180 weights/biases + 16 scaler

@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "models/model_rule.c"
+        "models/model_logistic.c"
+        "models/model_tree.c"
+        "models/model_mlp.c"
+    INCLUDE_DIRS
+        "."
+        "models"
+    REQUIRES
+        "esp_timer"
+)
