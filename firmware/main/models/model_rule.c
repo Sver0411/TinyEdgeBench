@@ -10,9 +10,7 @@
 #define DIRECTED_RATIO 0.4f
 #define NOISY_RATIO 0.35f
 
-const char *const class_names[NUM_CLASSES] = {
-    "NORMAL", "RAPID_CHANGE", "SLOW_DRIFT", "NOISY"
-};
+/* class_names[] lives in main.c so every build variant links it exactly once. */
 
 int predict_rule(const float *features)
 {

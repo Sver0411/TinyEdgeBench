@@ -1,10 +1,14 @@
 /* TinyEdgeBench ESP32 demo.
  *
- * Runs the four exported inference methods on a few fixed feature rows and
- * prints the results. No sensors, no Wi-Fi, no tasks - just inference.
+ * Runs the linked predictor(s) on a few fixed feature rows and prints the
+ * results. No sensors, no Wi-Fi, no tasks - just inference.
  *
- * The latency hook at the bottom is a placeholder for when a board is
- * available: nothing has been measured on hardware yet.
+ * Which predictors are linked is decided by the CMake option
+ * TINYEDGEBENCH_MODEL, so a build can contain one method (that is what
+ * benchmark/measure_flash.py uses) or all four (the normal demo).
+ *
+ * The latency hook at the bottom is there for when a board is available:
+ * nothing has been measured on hardware yet.
  */
 
 #include <stdio.h>
@@ -20,23 +24,46 @@ static const float demo_features[][NUM_FEATURES] = {
     {21.647165f, 45.921643f, 376.171198f, -0.245404f, 0.021942f, 34.874015f, 2.458802f, 0.513554f},   /* NOISY */
 };
 
+const char *const class_names[NUM_CLASSES] = {
+    "NORMAL", "RAPID_CHANGE", "SLOW_DRIFT", "NOISY"
+};
+
+#if defined(TINYEDGEBENCH_HAVE_RULE) || defined(TINYEDGEBENCH_HAVE_LOGISTIC) || \
+    defined(TINYEDGEBENCH_HAVE_TREE) || defined(TINYEDGEBENCH_HAVE_MLP)
+#define TINYEDGEBENCH_HAS_PREDICTOR 1
+#endif
+
+#ifdef TINYEDGEBENCH_HAS_PREDICTOR
+
 typedef int (*predict_fn)(const float *);
 
+/* Which methods show up depends on what the build linked in. */
 static const struct {
     const char *name;
     predict_fn predict;
 } methods[] = {
+#ifdef TINYEDGEBENCH_HAVE_RULE
     {"rule", predict_rule},
+#endif
+#ifdef TINYEDGEBENCH_HAVE_LOGISTIC
     {"logistic", predict_logistic},
+#endif
+#ifdef TINYEDGEBENCH_HAVE_TREE
     {"tree", predict_tree},
+#endif
+#ifdef TINYEDGEBENCH_HAVE_MLP
     {"mlp", predict_mlp},
+#endif
 };
+
+#define METHOD_COUNT (sizeof(methods) / sizeof(methods[0]))
 
 static void run_demo(void)
 {
-    for (size_t row = 0; row < sizeof(demo_features) / sizeof(demo_features[0]); row++) {
+    size_t rows = sizeof(demo_features) / sizeof(demo_features[0]);
+    for (size_t row = 0; row < rows; row++) {
         printf("row %u:", (unsigned)row + 1);
-        for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+        for (size_t m = 0; m < METHOD_COUNT; m++) {
             int cls = methods[m].predict(demo_features[row]);
             printf("  %s=%s", methods[m].name, class_names[cls]);
         }
@@ -51,7 +78,7 @@ static void measure_latency(const float *features)
     const int iterations = 1000;
     volatile int sink = 0;
 
-    for (size_t m = 0; m < sizeof(methods) / sizeof(methods[0]); m++) {
+    for (size_t m = 0; m < METHOD_COUNT; m++) {
         uint64_t start = esp_timer_get_time();
         for (int i = 0; i < iterations; i++) {
             sink += methods[m].predict(features);
@@ -66,6 +93,20 @@ static void measure_latency(const float *features)
     }
     (void)sink;
 }
+
+#else /* baseline build: no predictor at all */
+
+static void run_demo(void)
+{
+    printf("no predictor linked (baseline build)\n");
+}
+
+static void measure_latency(const float *features)
+{
+    (void)features;
+}
+
+#endif
 
 void app_main(void)
 {

@@ -67,9 +67,7 @@ def export_rule():
 #define DIRECTED_RATIO {c_float(rules.DIRECTED_RATIO)}
 #define NOISY_RATIO {c_float(rules.NOISY_RATIO)}
 
-const char *const class_names[NUM_CLASSES] = {{
-    "{LABELS[0]}", "{LABELS[1]}", "{LABELS[2]}", "{LABELS[3]}"
-}};
+/* class_names[] lives in main.c so every build variant links it exactly once. */
 
 int predict_rule(const float *features)
 {{

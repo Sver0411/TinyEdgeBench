@@ -1,0 +1,5 @@
+method,text_bytes,rodata_bytes,data_bytes,iram_text_bytes,flash_total_bytes,flash_delta_bytes
+rule,79378,40412,11964,57371,190460,968
+logistic,79354,40636,11964,57371,190660,1168
+tree,79718,40412,11964,57371,190800,1308
+mlp,79530,41196,11964,57371,191396,1904

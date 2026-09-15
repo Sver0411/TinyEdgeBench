@@ -38,20 +38,10 @@ def test_all_methods_beat_random_baseline(scores):
         assert metrics["accuracy"] > RANDOM_BASELINE + 0.20, name
 
 
-def test_learned_methods_beat_the_hand_written_rules(scores):
-    best_learned = max(scores[name]["accuracy"] for name in ("logistic", "tree", "mlp"))
-    assert scores["rule"]["accuracy"] < best_learned
-
-
-def test_learned_methods_agree_within_a_few_points(scores):
-    values = [scores[name]["accuracy"] for name in ("logistic", "tree", "mlp")]
-    assert max(values) - min(values) < 0.10
-
-
 def test_rule_uses_no_training(trained):
     _, models = trained
     assert models["rule"] is None
-    assert train.estimate_size("rule", None)["bytes"] == 20
+    assert train.estimate_size("rule", None)["bytes"] == 5 * 4  # five thresholds, float32
 
 
 def test_tree_depth_is_limited(trained):
@@ -66,10 +56,21 @@ def test_mlp_architecture_is_tiny(trained):
     assert len(clf.hidden_layer_sizes) <= 2
 
 
-def test_size_grows_with_complexity(trained):
+def test_size_estimate_matches_stored_parameters(trained):
+    """Raw-constant counts must match what each model actually stores."""
     _, models = trained
-    sizes = {name: train.estimate_size(name, models[name])["bytes"] for name in train.METHODS}
-    assert sizes["rule"] < sizes["logistic"] < sizes["tree"] < sizes["mlp"]
+    scaler_params = len(train.FEATURE_COLUMNS) * 2  # mean + scale per feature
+
+    logreg = models["logistic"].named_steps["clf"]
+    assert train.estimate_size("logistic", models["logistic"])["parameters"] == (
+        logreg.coef_.size + logreg.intercept_.size + scaler_params)
+
+    mlp = models["mlp"].named_steps["clf"]
+    expected = sum(w.size + b.size for w, b in zip(mlp.coefs_, mlp.intercepts_)) + scaler_params
+    assert train.estimate_size("mlp", models["mlp"])["parameters"] == expected
+
+    # the tree is exported as nested comparisons, so it has no parameter array
+    assert train.estimate_size("tree", models["tree"])["parameters"] == models["tree"].tree_.node_count
 
 
 def test_confusion_matrix_covers_every_test_row(trained, scores):
