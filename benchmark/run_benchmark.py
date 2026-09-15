@@ -70,10 +70,14 @@ def run(methods=None):
 
 def plot_accuracy_vs_size(results, path):
     fig, ax = plt.subplots(figsize=(6.5, 4.2))
-    for row in results:
+    # alternate the label offsets so neighbouring points do not overlap
+    offsets = [((10, -4), "left"), ((10, -14), "left"), ((10, 8), "left"), ((10, -4), "left")]
+    for row, (offset, align) in zip(results, offsets):
         ax.scatter(row["size_bytes"], row["accuracy"], s=90, zorder=3)
         ax.annotate(row["method"], (row["size_bytes"], row["accuracy"]),
-                    textcoords="offset points", xytext=(8, -3))
+                    textcoords="offset points", xytext=offset, ha=align)
+    sizes = [row["size_bytes"] for row in results]
+    ax.set_xlim(min(sizes) * 0.4, max(sizes) * 2.5)
     ax.set_xscale("log")
     ax.set_xlabel("estimated raw parameter storage (bytes, log scale)")
     ax.set_ylabel("test accuracy")
