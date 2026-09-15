@@ -31,7 +31,7 @@ firmware/                    minimal ESP-IDF project that runs the linked predic
 | Rule-based | 5 hand-written thresholds on `motion` and `drift` | not fitted to the data |
 | Logistic Regression | `StandardScaler` + `LogisticRegression` | max_iter=1000 |
 | Decision Tree | `DecisionTreeClassifier` | max_depth=5 |
-| Tiny MLP | `StandardScaler` + `MLPClassifier` | 8 -> 8 -> 4, ReLU, max_iter=500 |
+| Tiny MLP | `StandardScaler` + `MLPClassifier` | 8 -> 8 -> 8 -> 4, ReLU, max_iter=500 |
 
 No TensorFlow, no ONNX, no quantisation - v0.1 compares the methods first.
 
@@ -76,9 +76,18 @@ Reading the table:
 
 ### The two size columns mean different things
 
-**Raw constants** are the theoretical data a method has to store: weights, biases, scaler constants and thresholds, counted as float32 values. They say nothing about how the code is compiled, and they are not defined the same way for every method (the rule set stores 5 thresholds, the tree is pure control flow). Treat them as a rough "how much does this model carry" indicator, not as storage cost.
+**Raw constants** are the theoretical data a method has to store: weights, biases, scaler constants and thresholds, counted as float32 values. They describe how much the *model* carries, not how it compiles, and they are not even defined the same way for every method:
 
-**Compiled Flash Δ** is measured, not estimated. `benchmark/measure_flash.py` builds the firmware five times with the CMake option `-DTINYEDGEBENCH_MODEL=...` - once with no predictor (baseline) and once per method - and reads the ELF section sizes straight from the ESP-IDF toolchain:
+| Method | Raw constants | Why |
+| --- | --- | --- |
+| Rule-based | 20 B | 5 thresholds |
+| Logistic Regression | 208 B | 32 weights + 4 biases + 16 scaler |
+| Decision Tree | N/A | no constants - exported as nested comparisons (control flow) |
+| Tiny MLP | 784 B | 180 weights/biases + 16 scaler |
+
+Do not put the tree's row next to the others: it has no parameter array at all. `results/benchmark.csv` therefore reports it as empty in `raw_constants_bytes` and keeps the rough node-and-leaf count only in a separate `structural_estimate_bytes` column.
+
+**Compiled Flash Δ** is measured, not estimated. `benchmark/measure_flash.py` builds the firmware five times with the CMake option `-DTINYEDGEBENCH_MODEL=...` - once with no predictor (baseline) and once per method - and reads the ELF section sizes from the ESP-IDF toolchain:
 
 ```text
 flash delta = flash bytes(model build) - flash bytes(baseline build)
@@ -86,11 +95,11 @@ flash delta = flash bytes(model build) - flash bytes(baseline build)
 baseline (no predictor) = 189,492 bytes of flash image
 ```
 
-Each delta covers the predictor *plus* the small fixed amount of demo/scaffolding code that any non-empty build pulls in (the baseline stubs those functions out), so compare deltas against each other rather than reading them as "model size".
+This is a compiled flash-section delta: it covers the predictor **plus** the small fixed amount of demo / scaffolding code that any non-empty build pulls in (the baseline stubs those functions out). That makes it comparable across the four methods, but it should not be read as a pure model size.
 
-**When comparing the four C implementations, use Compiled Flash Δ.** It is the number that comes out of the compiler.
+**When comparing the four C implementations, use Compiled Flash Δ** - including in `accuracy_vs_model_size.png`, whose x axis is the compiled flash delta from `results/flash_size.csv`, not the raw-constant count.
 
-Plots: `results/accuracy_vs_model_size.png`, `results/confusion_matrices.png`. Raw numbers: `results/benchmark.csv`, `results/flash_size.csv`.
+Plots: `results/accuracy_vs_model_size.png` (accuracy vs compiled flash), `results/confusion_matrices.png`. Raw numbers: `results/benchmark.csv`, `results/flash_size.csv`.
 
 ## ESP32 status
 
@@ -105,10 +114,19 @@ Plots: `results/accuracy_vs_model_size.png`, `results/confusion_matrices.png`. R
 
 `firmware/main/main.c` runs the linked predictors on four fixed rows and prints the results. `measure_latency()` is the `esp_timer` hook kept ready for when a board exists - until then no latency, RAM or power numbers are published.
 
-Build-time flash per predictor:
+Build-time flash per predictor (needs an ESP-IDF environment: source its
+`export.sh`, or set `IDF_PATH`):
 
 ```bash
 python benchmark/measure_flash.py     # -> results/flash_size.csv
+```
+
+The scripts look ESP-IDF up in this order: `$IDF_PATH/export.sh`, then `idf.py`
+already on `PATH`. If neither exists they print
+
+```text
+ESP-IDF environment not found.
+Run ESP-IDF export.sh first or set IDF_PATH.
 ```
 
 ## Run it
@@ -118,7 +136,7 @@ python dataset/generate.py          # writes dataset/data.csv
 python training/train.py            # trains, prints val/test scores
 python training/export_models.py    # writes firmware/main/models/model_*.c
 python benchmark/run_benchmark.py   # writes results/benchmark.csv + 2 plots
-python benchmark/measure_flash.py   # writes results/flash_size.csv (needs ESP-IDF)
+python benchmark/measure_flash.py   # writes results/flash_size.csv (needs ESP-IDF env)
 python -m pytest tests/ -v          # includes the Python/C parity check
 ```
 

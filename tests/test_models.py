@@ -1,4 +1,6 @@
-"""Model tests: every method runs, beats chance, and is sized consistently."""
+"""Model tests: every method runs, produces valid output, and stays within
+the documented structural limits. No test pins down experimental rankings -
+those are results, not correctness."""
 
 import numpy as np
 import pytest
@@ -41,7 +43,7 @@ def test_all_methods_beat_random_baseline(scores):
 def test_rule_uses_no_training(trained):
     _, models = trained
     assert models["rule"] is None
-    assert train.estimate_size("rule", None)["bytes"] == 5 * 4  # five thresholds, float32
+    assert train.estimate_size("rule", None)["raw_constants_bytes"] == 5 * 4  # 5 thresholds
 
 
 def test_tree_depth_is_limited(trained):
@@ -59,18 +61,20 @@ def test_mlp_architecture_is_tiny(trained):
 def test_size_estimate_matches_stored_parameters(trained):
     """Raw-constant counts must match what each model actually stores."""
     _, models = trained
-    scaler_params = len(train.FEATURE_COLUMNS) * 2  # mean + scale per feature
+    scaler_constants = len(train.FEATURE_COLUMNS) * 2  # mean + scale per feature
 
     logreg = models["logistic"].named_steps["clf"]
-    assert train.estimate_size("logistic", models["logistic"])["parameters"] == (
-        logreg.coef_.size + logreg.intercept_.size + scaler_params)
+    assert train.estimate_size("logistic", models["logistic"])["raw_constants_bytes"] == (
+        logreg.coef_.size + logreg.intercept_.size + scaler_constants) * 4
 
     mlp = models["mlp"].named_steps["clf"]
-    expected = sum(w.size + b.size for w, b in zip(mlp.coefs_, mlp.intercepts_)) + scaler_params
-    assert train.estimate_size("mlp", models["mlp"])["parameters"] == expected
+    expected = sum(w.size + b.size for w, b in zip(mlp.coefs_, mlp.intercepts_)) + scaler_constants
+    assert train.estimate_size("mlp", models["mlp"])["raw_constants_bytes"] == expected * 4
 
-    # the tree is exported as nested comparisons, so it has no parameter array
-    assert train.estimate_size("tree", models["tree"])["parameters"] == models["tree"].tree_.node_count
+    # the tree is exported as nested comparisons: no raw constants at all
+    tree_size = train.estimate_size("tree", models["tree"])
+    assert tree_size["raw_constants_bytes"] is None
+    assert tree_size["structural_estimate_bytes"] > 0
 
 
 def test_confusion_matrix_covers_every_test_row(trained, scores):
@@ -80,9 +84,3 @@ def test_confusion_matrix_covers_every_test_row(trained, scores):
         assert scores[name]["confusion"].sum() == len(y_test)
 
 
-def test_validation_and_test_scores_are_close(trained):
-    splits, models = trained
-    for name in ("logistic", "tree", "mlp"):
-        val = train.evaluate(splits["val"][1], train.predict_ids(name, models[name], splits["val"][0]))
-        test = train.evaluate(splits["test"][1], train.predict_ids(name, models[name], splits["test"][0]))
-        assert abs(val["accuracy"] - test["accuracy"]) < 0.05

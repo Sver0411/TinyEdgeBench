@@ -4,7 +4,7 @@ Methods
     rule      - hand-written thresholds (training/rules.py, no training)
     logistic  - StandardScaler + LogisticRegression
     tree      - DecisionTreeClassifier, depth limited
-    mlp       - StandardScaler + MLPClassifier 8 -> 8 -> 4
+    mlp       - StandardScaler + MLPClassifier 8 -> 8 -> 8 -> 4
 
 All methods see exactly the same features and the same train/val/test rows.
 
@@ -137,39 +137,52 @@ def evaluate(y_true, y_pred):
 # size
 # --------------------------------------------------------------------------- #
 def estimate_size(name, model):
-    """Estimated raw parameter storage for inference, in float32 bytes.
+    """Size bookkeeping for one method (not a pickle size, not a flash size).
 
-    This is NOT a pickle size: it counts the numbers the C code has to store.
+    Returns three fields:
+
+        raw_constants_bytes       float32 bytes of the numeric constants the
+                                  inference code stores - weights, biases,
+                                  scaler constants, thresholds
+        raw_constants_note        what that number covers
+        structural_estimate_bytes rough structural estimate, tree only
+
+    The tree has no parameter array - it is exported as nested comparisons - so
+    its raw_constants_bytes is None and its structural estimate is kept in a
+    separate field. Use results/flash_size.csv (compiled flash delta) when the
+    four C implementations have to be compared on equal terms.
     """
     if name == "rule":
-        params = 5  # the five thresholds in training/rules.py
-        return {"parameters": params, "bytes": params * BYTES_PER_FLOAT,
-                "detail": "5 thresholds"}
+        thresholds = 5  # the five thresholds in training/rules.py
+        return {"raw_constants_bytes": thresholds * BYTES_PER_FLOAT,
+                "raw_constants_note": "5 thresholds",
+                "structural_estimate_bytes": None}
 
     if name == "logistic":
         clf = model.named_steps["clf"]
-        scaler_params = model.named_steps["scaler"].mean_.size * 2
-        params = clf.coef_.size + clf.intercept_.size + scaler_params
-        return {"parameters": int(params), "bytes": int(params) * BYTES_PER_FLOAT,
-                "detail": f"{clf.coef_.size} weights + {clf.intercept_.size} biases "
-                          f"+ {scaler_params} scaler"}
+        scaler = model.named_steps["scaler"].mean_.size * 2
+        constants = clf.coef_.size + clf.intercept_.size + scaler
+        return {"raw_constants_bytes": int(constants) * BYTES_PER_FLOAT,
+                "raw_constants_note": f"{clf.coef_.size} weights + "
+                                      f"{clf.intercept_.size} biases + {scaler} scaler",
+                "structural_estimate_bytes": None}
 
     if name == "tree":
         tree = model.tree_
         internal = int(np.sum(tree.children_left != -1))
         leaves = int(tree.node_count - internal)
         # internal node: threshold (4 B) + feature id (1 B) + 2 children (2 B each)
-        total = internal * (BYTES_PER_FLOAT + 1 + 4) + leaves * 1
-        return {"parameters": int(tree.node_count), "bytes": int(total),
-                "detail": f"{internal} internal nodes + {leaves} leaves"}
+        return {"raw_constants_bytes": None,
+                "raw_constants_note": "no constants - exported as control flow",
+                "structural_estimate_bytes": internal * (BYTES_PER_FLOAT + 1 + 4) + leaves}
 
     if name == "mlp":
         clf = model.named_steps["clf"]
-        params = sum(w.size + b.size for w, b in zip(clf.coefs_, clf.intercepts_))
-        scaler_params = model.named_steps["scaler"].mean_.size * 2
-        total = params + scaler_params
-        return {"parameters": int(total), "bytes": int(total) * BYTES_PER_FLOAT,
-                "detail": f"{params} weights/biases + {scaler_params} scaler"}
+        weights = sum(w.size + b.size for w, b in zip(clf.coefs_, clf.intercepts_))
+        scaler = model.named_steps["scaler"].mean_.size * 2
+        return {"raw_constants_bytes": int(weights + scaler) * BYTES_PER_FLOAT,
+                "raw_constants_note": f"{weights} weights/biases + {scaler} scaler",
+                "structural_estimate_bytes": None}
 
     raise ValueError(f"unknown method: {name}")
 
@@ -190,10 +203,11 @@ def main():
             metrics = evaluate(y, predict_ids(name, models[name], X))
             print(f"{name:10s} {metrics['accuracy']:7.4f} {metrics['macro_f1']:9.4f}")
 
-    print("\n=== test size ===")
+    print("\n=== raw constants (tree has none - it is control flow) ===")
     for name in METHODS:
         size = estimate_size(name, models[name])
-        print(f"{name:10s} {size['bytes']:6d} B  ({size['detail']})")
+        raw = "N/A" if size["raw_constants_bytes"] is None else f"{size['raw_constants_bytes']} B"
+        print(f"{name:10s} {raw:>7s}  ({size['raw_constants_note']})")
 
 
 if __name__ == "__main__":

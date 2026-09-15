@@ -31,7 +31,7 @@ firmware/                    最小 ESP-IDF 工程，运行被链接进来的 pr
 | Rule-based | 基于 `motion` 与 `drift` 的 5 个手写阈值 | 不对数据拟合 |
 | Logistic Regression | `StandardScaler` + `LogisticRegression` | max_iter=1000 |
 | Decision Tree | `DecisionTreeClassifier` | max_depth=5 |
-| Tiny MLP | `StandardScaler` + `MLPClassifier` | 8 -> 8 -> 4，ReLU，max_iter=500 |
+| Tiny MLP | `StandardScaler` + `MLPClassifier` | 8 → 8 → 8 → 4，ReLU，max_iter=500 |
 
 不引入 TensorFlow、ONNX，也不做量化：v0.1 先把方法之间的比较做清楚。
 
@@ -76,9 +76,18 @@ firmware/                    最小 ESP-IDF 工程，运行被链接进来的 pr
 
 ### 两个体积列的含义不同
 
-**Raw constants（原始常量）** 是方法理论上要存的数据：权重、偏置、scaler 常量、阈值，按 float32 计数。它不涉及代码如何编译，并且四种方法的定义并不完全一致（规则集只存 5 个阈值，决策树则是纯控制流）。把它当成"这个模型携带多少信息"的粗略指标，而不是存储开销。
+**Raw constants（原始常量）** 是方法理论上要存的数据：权重、偏置、scaler 常量、阈值，按 float32 计数。它描述"模型携带多少信息"，不涉及如何编译，而且四种方法的定义并不一致：
 
-**Compiled Flash Δ（编译后 flash 增量）** 是实测值，不是估算。`benchmark/measure_flash.py` 用 CMake 选项 `-DTINYEDGEBENCH_MODEL=...` 把固件构建五次 —— 一次不含 predictor（baseline），另外每种方法各一次 —— 并直接从 ESP-IDF 工具链读取 ELF 各段大小：
+| 方法 | Raw constants | 说明 |
+| --- | --- | --- |
+| Rule-based | 20 B | 5 个阈值 |
+| Logistic Regression | 208 B | 32 权重 + 4 偏置 + 16 scaler |
+| Decision Tree | N/A | 无常量 —— 导出为嵌套比较（控制流） |
+| Tiny MLP | 784 B | 180 权重/偏置 + 16 scaler |
+
+不要把决策树这一行与其他行并列比较：它根本没有参数数组。因此 `results/benchmark.csv` 里 tree 的 `raw_constants_bytes` 留空，粗略的节点/叶子估算只放在单独的 `structural_estimate_bytes` 列里。
+
+**Compiled Flash Δ（编译后 flash 增量）** 是实测值，不是估算。`benchmark/measure_flash.py` 用 CMake 选项 `-DTINYEDGEBENCH_MODEL=...` 把固件构建五次 —— 一次不含 predictor（baseline），另外每种方法各一次 —— 并从 ESP-IDF 工具链读取 ELF 各段大小：
 
 ```text
 flash 增量 = 该模型构建的 flash 字节数 - baseline 构建的 flash 字节数
@@ -86,11 +95,11 @@ flash 增量 = 该模型构建的 flash 字节数 - baseline 构建的 flash 字
 baseline（无 predictor）= 189,492 字节 flash image
 ```
 
-每个增量包含 predictor 本身，**加上**任何非空构建都会带进来的一小坨固定 demo/脚手架代码（baseline 里这些函数被替换成空实现），所以要横向比较增量，而不是把它当成纯粹的"模型大小"。
+这是一个编译期 flash 段增量：它包含 predictor 本身，**加上**任何非空构建都会带进来的一小坨固定 demo/脚手架代码（baseline 里这些函数被替换成空实现）。因此它适合在四种方法之间横向比较，但不应被读成纯粹的模型大小。
 
-**比较这四份 C 实现时，请优先看 Compiled Flash Δ。** 它是编译器真正产出的数字。
+**比较这四份 C 实现时，请优先看 Compiled Flash Δ** —— 包括 `accuracy_vs_model_size.png`，它的横轴取自 `results/flash_size.csv` 的 compiled flash 增量，而不是 raw constants 计数。
 
-图表：`results/accuracy_vs_model_size.png`、`results/confusion_matrices.png`。原始数据：`results/benchmark.csv`、`results/flash_size.csv`。
+图表：`results/accuracy_vs_model_size.png`（准确率 vs 编译后 flash）、`results/confusion_matrices.png`。原始数据：`results/benchmark.csv`、`results/flash_size.csv`。
 
 ## ESP32 状态
 
@@ -105,10 +114,17 @@ baseline（无 predictor）= 189,492 字节 flash image
 
 `firmware/main/main.c` 会把链接进来的 predictor 跑在四行固定数据上并打印结果；`measure_latency()` 是预留的 `esp_timer` 钩子，等板子到了就能用。在此之前不发布任何延迟、RAM 或功耗数字。
 
-按 predictor 统计编译后的 flash：
+按 predictor 统计编译后的 flash（需要有 ESP-IDF 环境：先 source 它的 `export.sh`，或设置 `IDF_PATH`）：
 
 ```bash
 python benchmark/measure_flash.py     # -> results/flash_size.csv
+```
+
+脚本按以下顺序查找 ESP-IDF：`$IDF_PATH/export.sh` → PATH 上已有的 `idf.py`。两者都没有时输出：
+
+```text
+ESP-IDF environment not found.
+Run ESP-IDF export.sh first or set IDF_PATH.
 ```
 
 ## 运行方式
@@ -118,7 +134,7 @@ python dataset/generate.py          # 生成 dataset/data.csv
 python training/train.py            # 训练，打印 val/test 分数
 python training/export_models.py    # 生成 firmware/main/models/model_*.c
 python benchmark/run_benchmark.py   # 生成 results/benchmark.csv + 2 张图
-python benchmark/measure_flash.py   # 生成 results/flash_size.csv（需要 ESP-IDF）
+python benchmark/measure_flash.py   # 生成 results/flash_size.csv（需要 ESP-IDF 环境）
 python -m pytest tests/ -v          # 含 Python/C 一致性检查
 ```
 

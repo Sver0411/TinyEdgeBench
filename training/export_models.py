@@ -275,7 +275,8 @@ def main():
         print(f"wrote {path}")
     for name in train.METHODS:
         size = train.estimate_size(name, models[name])
-        print(f"{name:10s} {size['bytes']:6d} B  ({size['detail']})")
+        raw = "N/A" if size["raw_constants_bytes"] is None else f"{size['raw_constants_bytes']} B"
+        print(f"{name:10s} {raw:>7s}  ({size['raw_constants_note']})")
 
 
 if __name__ == "__main__":
