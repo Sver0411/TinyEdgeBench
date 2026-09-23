@@ -150,7 +150,8 @@ def write_results(log_paths, output=RESULTS, build_sizes=ROOT / "results/flash_s
     raw = output / "raw_serial_logs"
     raw.mkdir(exist_ok=True)
     for old in raw.glob("*.log"):
-        old.unlink()
+        if not old.name.startswith("._") and old.exists():
+            old.unlink()
     for name, content in captures:
         # Serial boot banners may contain a MAC address; retain only benchmark records.
         public_lines = [line for line in content.splitlines()

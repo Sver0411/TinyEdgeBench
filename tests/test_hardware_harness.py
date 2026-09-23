@@ -94,7 +94,12 @@ def test_parser_and_schema(tmp_path):
                              source_sha256="source", model_sha256="model",
                              sdkconfig_sha256="config", flash_delta_bytes=40,
                              static_ram_delta_bytes=0))
+    raw = tmp_path / "out/raw_serial_logs"
+    raw.mkdir(parents=True)
+    (raw / "old.log").write_text("old")
+    (raw / "._old.log").write_text("filesystem metadata")
     rows = parser.write_results([log], tmp_path / "out", size)
+    assert not (raw / "old.log").exists()
     assert len(rows) == 1 and rows[0]["accuracy"] == 1
     assert rows[0]["macro_f1"] == 1
     assert rows[0]["latency_p50_us"] == 1.125
