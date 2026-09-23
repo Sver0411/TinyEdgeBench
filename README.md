@@ -1,8 +1,26 @@
-# TinyEdgeBench v0.2
+# TinyEdgeBench v0.3
 
 **English** | [简体中文](README.zh-CN.md)
 
-TinyEdgeBench compares four small classifiers on one sensor-window task, using the same eight features, the same test rows, and one ESP32-S3 board. It asks whether extra classification quality is worth the compiled Flash, static RAM, heap, and inference time.
+TinyEdgeBench compares four small classifier families on one sensor-window task, using the same eight features, the same test rows, and one ESP32-S3 board. v0.3 asks what post-training INT8 quantization changes for the existing Logistic and MLP models. Rule and Tree remain controls. The published v0.2 evidence is preserved below and at the [`v0.2` tag](https://github.com/Sver0411/TinyEdgeBench/tree/v0.2).
+
+## v0.3: FP32 vs INT8
+
+Portable scalar INT8 uses training-only calibration, signed INT8 weights and activations, int32 accumulators, and integer fixed-point hidden-layer requantization. Input StandardScaler preprocessing remains FP32. All six implementations use the same dataset, ESP32-S3, and batch-timing protocol. The main latency values are **raw**, with no baseline subtraction.
+
+<!-- V03_MAIN_START -->
+Pending clean-commit hardware measurement.
+<!-- V03_MAIN_END -->
+
+### Quantization effect
+
+<!-- V03_COMPARE_START -->
+Pending clean-commit hardware measurement.
+<!-- V03_COMPARE_END -->
+
+The [v0.3 quantization method](docs/quantization_methodology.md) defines calibration, rounding, saturation, integer accumulation, storage accounting, and paired timing-baseline subtraction. Full per-class F1 and confusion matrices are machine-readable in `results/v0.3/`. Power and real-sensor accuracy: **Not measured yet**.
+
+## Archived v0.2 FP32 baseline
 
 <!-- HARDWARE_TABLE_START -->
 | Model | Accuracy (3,000) | Macro F1 (3,000) | Flash Δ | Static RAM Δ | Inference heap alloc | p50 µs | p95 µs | p99 µs |

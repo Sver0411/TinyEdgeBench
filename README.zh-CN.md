@@ -1,8 +1,26 @@
-# TinyEdgeBench v0.2
+# TinyEdgeBench v0.3
 
 [English](README.md) | **简体中文**
 
-TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测试集和同一块 ESP32-S3 上比较四种轻量分类器：更复杂的模型换来了多少分类收益，又付出了多少 Flash、静态 RAM、堆和推理时间？
+TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测试集和同一块 ESP32-S3 上比较四种轻量分类器。v0.3 研究原有 Logistic 与 MLP 经过训练后 INT8 量化的实际变化；Rule 和 Tree 继续作为控制组。已发布的 v0.2 证据保留在下方及 [`v0.2` 标签](https://github.com/Sver0411/TinyEdgeBench/tree/v0.2)。
+
+## v0.3：FP32 与 INT8
+
+便携式标量 INT8 使用仅来自训练集的校准、INT8 权重和激活、int32 累加，以及隐藏层整数定点重标定。输入 StandardScaler 预处理仍使用 FP32。六种实现采用相同数据、ESP32-S3 和批次计时协议。主表延迟是**未扣除 baseline 的原始值**。
+
+<!-- V03_MAIN_START -->
+等待干净代码提交上的正式真机实验。
+<!-- V03_MAIN_END -->
+
+### 量化效果
+
+<!-- V03_COMPARE_START -->
+等待干净代码提交上的正式真机实验。
+<!-- V03_COMPARE_END -->
+
+[v0.3 量化方法](docs/quantization_methodology.md)定义了校准、舍入、饱和、整数累加、存储计数及成对 timing baseline 扣除。每类 F1 和混淆矩阵保存在 `results/v0.3/`。功耗与真实传感器准确率：**Not measured yet**。
+
+## 已归档的 v0.2 FP32 基线
 
 <!-- HARDWARE_TABLE_START -->
 | Model | Accuracy (3,000) | Macro F1 (3,000) | Flash Δ | Static RAM Δ | Inference heap alloc | p50 µs | p95 µs | p99 µs |

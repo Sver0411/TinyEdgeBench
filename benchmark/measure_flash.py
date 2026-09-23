@@ -122,8 +122,9 @@ def build_and_size(variant, project, *, idf_prefix, size_tool):
     nm_tool = str(size_tool).removesuffix("-size") + "-nm"
     symbols = subprocess.run([nm_tool, "-g", "--defined-only", str(elf)],
                              capture_output=True, text=True, check=True).stdout
-    linked = set(re.findall(r"\bpredict_(rule|logistic|tree|mlp)\b", symbols))
-    expected = set() if variant == "baseline" else ({variant} if variant != "all" else set(VARIANTS[1:]))
+    linked = set(re.findall(r"\bpredict_(logistic_int8|mlp_int8|rule|logistic|tree|mlp)\b", symbols))
+    expected_name = {"logistic_fp32": "logistic", "mlp_fp32": "mlp"}.get(variant, variant)
+    expected = set() if variant in ("baseline", "timing_baseline") else {expected_name}
     if linked != expected:
         raise SystemExit(f"wrong predictors linked for {variant}: {sorted(linked)}")
     provenance = json.loads((BUILD_DIR / "teb_provenance.json").read_text())

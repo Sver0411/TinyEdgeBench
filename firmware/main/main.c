@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "benchmark.h"
+#include "benchmark_int8_expected.h"
 #include "models/model_api.h"
 
 const char *const class_names[NUM_CLASSES] = {
@@ -7,11 +8,11 @@ const char *const class_names[NUM_CLASSES] = {
 };
 
 #if !defined(TINYEDGEBENCH_HAVE_RULE) && !defined(TINYEDGEBENCH_HAVE_LOGISTIC) && \
-    !defined(TINYEDGEBENCH_HAVE_TREE) && !defined(TINYEDGEBENCH_HAVE_MLP)
-static int predict_baseline(const float *features)
+    !defined(TINYEDGEBENCH_HAVE_TREE) && !defined(TINYEDGEBENCH_HAVE_MLP) && \
+    !defined(TINYEDGEBENCH_HAVE_LOGISTIC_INT8) && !defined(TINYEDGEBENCH_HAVE_MLP_INT8)
+static int predict_timing_baseline(const float *features)
 {
-    (void)features;
-    return CLASS_NORMAL;
+    return features[0] > 1e30f ? 1 : 0;
 }
 #endif
 
@@ -20,13 +21,16 @@ void app_main(void)
 #if defined(TINYEDGEBENCH_HAVE_RULE)
     run_benchmark("rule", predict_rule, benchmark_expected_rule);
 #elif defined(TINYEDGEBENCH_HAVE_LOGISTIC)
-    run_benchmark("logistic", predict_logistic, benchmark_expected_logistic);
+    run_benchmark("logistic_fp32", predict_logistic, benchmark_expected_logistic);
+#elif defined(TINYEDGEBENCH_HAVE_LOGISTIC_INT8)
+    run_benchmark("logistic_int8", predict_logistic_int8, benchmark_expected_logistic_int8);
 #elif defined(TINYEDGEBENCH_HAVE_TREE)
     run_benchmark("tree", predict_tree, benchmark_expected_tree);
 #elif defined(TINYEDGEBENCH_HAVE_MLP)
-    run_benchmark("mlp", predict_mlp, benchmark_expected_mlp);
+    run_benchmark("mlp_fp32", predict_mlp, benchmark_expected_mlp);
+#elif defined(TINYEDGEBENCH_HAVE_MLP_INT8)
+    run_benchmark("mlp_int8", predict_mlp_int8, benchmark_expected_mlp_int8);
 #else
-    printf("TEB_BASELINE no model linked; sizing reference only\n");
-    run_benchmark("baseline", predict_baseline, benchmark_expected_rule);
+    run_benchmark("timing_baseline", predict_timing_baseline, NULL);
 #endif
 }

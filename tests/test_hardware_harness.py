@@ -128,7 +128,7 @@ def test_model_selection_is_single_source():
     assert 'STREQUAL "all"' not in cmake
     assert 'list(FILTER TEB_SOURCE_FILES EXCLUDE REGEX' in cmake
     for model in parser.MODELS:
-        branch = re.search(rf'STREQUAL "{model}"\)(.*?)(?:elseif|else\()', cmake, re.S)
+        branch = re.search(rf'STREQUAL "{model}"(?: OR [^\n]+)?\)(.*?)(?:elseif|else\()', cmake, re.S)
         assert branch is not None
         assert branch.group(1).count('"models/model_') == 1
         assert f'"models/model_{model}.c"' in branch.group(1)

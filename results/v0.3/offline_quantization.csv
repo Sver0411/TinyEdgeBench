@@ -1,0 +1,7 @@
+variant,model_family,precision,implementation,quantization_scheme,accuracy,macro_f1,raw_parameter_bytes,declared_local_scratch_bytes,input_clip_rate,activation1_clip_rate,activation2_clip_rate,input_clip_count,activation1_clip_count,activation2_clip_count,delta_accuracy_vs_fp32,delta_f1_vs_fp32
+rule,rule,native,portable_scalar,N/A,0.6963333333333334,0.6604038071748499,20,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
+tree,tree,native,portable_scalar,N/A,0.8203333333333334,0.8167005500709578,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
+logistic_fp32,logistic,fp32,portable_scalar,N/A,0.8283333333333334,0.8256149942858768,208,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
+logistic_int8,logistic,int8,portable_scalar,symmetric_signed_int8_per_tensor_ptq,0.8283333333333334,0.8252553726911029,128,12,4.1666666666666665e-05,N/A,N/A,1,N/A,N/A,0.0,-0.00035962159477387345
+mlp_fp32,mlp,fp32,portable_scalar,N/A,0.825,0.8214255212485213,784,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
+mlp_int8,mlp,int8,portable_scalar,symmetric_signed_int8_per_tensor_ptq,0.822,0.8178498820569466,354,28,4.1666666666666665e-05,0.0,0.0,1,0,0,-0.0030000000000000027,-0.0035756391915746644

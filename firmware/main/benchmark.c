@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "esp_chip_info.h"
 #include "esp_heap_caps.h"
@@ -30,6 +31,9 @@
 #endif
 #ifndef TEB_CONFIG_HASH
 #define TEB_CONFIG_HASH "unknown"
+#endif
+#ifndef TEB_QUANT_HASH
+#define TEB_QUANT_HASH "unknown"
 #endif
 
 #define WARMUP 100
@@ -57,6 +61,12 @@ static double percentile_us(unsigned numerator, unsigned denominator)
 void run_benchmark(const char *model, predict_fn predict,
                    const uint8_t expected[BENCHMARK_SAMPLES])
 {
+    const char *family = strstr(model, "logistic") ? "logistic" :
+                         strstr(model, "mlp") ? "mlp" :
+                         strcmp(model, "rule") == 0 ? "rule" :
+                         strcmp(model, "tree") == 0 ? "tree" : "baseline";
+    const char *precision = strstr(model, "_int8") ? "int8" :
+                            strstr(model, "_fp32") ? "fp32" : "native";
     esp_chip_info_t chip;
     esp_chip_info(&chip);
 #if defined(CONFIG_COMPILER_OPTIMIZATION_PERF)
@@ -75,7 +85,9 @@ void run_benchmark(const char *model, predict_fn predict,
 #else
     const char *power_management = "disabled";
 #endif
-    printf("TEB_BEGIN {\"model\":\"%s\",\"board\":\"unspecified\","
+    printf("TEB_BEGIN {\"model\":\"%s\",\"model_family\":\"%s\","
+           "\"precision\":\"%s\",\"implementation\":\"portable_scalar\","
+           "\"board\":\"unspecified\","
            "\"chip\":\"ESP32-S3\",\"revision\":%u,"
            "\"idf\":\"%s\",\"compiler\":\"GCC %s\","
            "\"cpu_mhz\":%u,\"optimization\":\"%s\","
@@ -83,17 +95,19 @@ void run_benchmark(const char *model, predict_fn predict,
            "\"git_commit\":\"%s\",\"git_dirty\":%s,"
            "\"source_sha256\":\"%s\","
            "\"model_sha256\":\"%s\",\"sdkconfig_sha256\":\"%s\","
+           "\"quantization_sha256\":\"%s\","
            "\"dataset_sha256\":\"%s\",\"subset_sha256\":\"%s\","
            "\"samples\":%u,\"warmup\":%u,\"iterations\":%u,"
            "\"timed_batches\":%u,\"inferences_per_batch\":%u,"
            "\"wifi\":\"disabled\",\"bluetooth\":\"disabled\","
            "\"power_management\":\"%s\",\"log_level\":%u}\n",
-           model, chip.revision, esp_get_idf_version(), __VERSION__,
+           model, family, precision, chip.revision, esp_get_idf_version(), __VERSION__,
            (unsigned)(esp_clk_cpu_freq() / 1000000), optimization,
            CONFIG_ESPTOOLPY_FLASHSIZE,
            TEB_GIT_COMMIT, TEB_GIT_DIRTY ? "true" : "false",
            TEB_SOURCE_HASH, TEB_MODEL_HASH,
-           TEB_CONFIG_HASH, benchmark_dataset_sha256, benchmark_subset_sha256,
+           TEB_CONFIG_HASH, TEB_QUANT_HASH,
+           benchmark_dataset_sha256, benchmark_subset_sha256,
            BENCHMARK_SAMPLES, WARMUP, ITERATIONS,
            TIMED_BATCHES, INFERENCES_PER_BATCH, power_management,
            (unsigned)CONFIG_LOG_DEFAULT_LEVEL);
@@ -102,15 +116,18 @@ void run_benchmark(const char *model, predict_fn predict,
     unsigned correct = 0;
     for (unsigned i = 0; i < BENCHMARK_SAMPLES; i++) {
         int prediction = predict(benchmark_features[i]);
-        if (prediction < 0 || prediction >= NUM_CLASSES || prediction != expected[i]) {
+        if (prediction < 0 || prediction >= NUM_CLASSES ||
+            (expected && prediction != expected[i])) {
             printf("TEB_ERROR {\"reason\":\"prediction_mismatch\","
                    "\"sample\":%u,\"expected\":%u,\"actual\":%d}\n",
-                   i, expected[i], prediction);
+                   i, expected ? expected[i] : 0, prediction);
             return;
         }
         int label = benchmark_labels[i];
-        confusion[label][prediction]++;
-        correct += label == prediction;
+        if (expected) {
+            confusion[label][prediction]++;
+            correct += label == prediction;
+        }
     }
 
     for (unsigned i = 0; i < WARMUP; i++) {

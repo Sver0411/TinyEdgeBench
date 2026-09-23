@@ -1,0 +1,27 @@
+# TinyEdgeBench v0.3: FP32 vs portable scalar INT8
+
+## Experiment boundary
+
+The dataset (seed 42), train/validation/test split, 3,000-row test set, 256-row hardware subset, FP32 trained Logistic and MLP models, ESP32-S3 configuration, and timing protocol are inherited from the immutable `v0.2` tag. Rule and Tree remain native controls. The only learned-model change is post-training quantization of the existing Logistic and 8→8→8→4 ReLU MLP weights. No framework, optimized SIMD kernel, assembly, or quantization-aware training is used.
+
+`training/quantize.py` fits the same models with the same split and seeds as v0.2. **Only the training split determines scales and clipping ranges.** The per-tensor symmetric scheme is fixed in advance, with no validation-based scheme selection in this first comparison; test is evaluated only for final reporting. No test data selects clipping, scales, layer widths, or an alternative scheme. The calibration split and measured ranges are saved in `results/v0.3/quantization_params.json`; test clipping rates are in `offline_quantization.csv` and do not feed the configuration.
+
+## Numerical scheme
+
+The input first uses the original FP32 StandardScaler constants. This preprocessing remains floating point; the quantized core is integer. A single signed symmetric input scale is the maximum absolute standardized training feature divided by 127. Quantization rounds ties **away from zero** and saturates to `[-127,127]`; `-128` is unused. Logistic weights share one per-tensor scale, so four int32 class accumulators and biases share an output scale and can be compared directly by integer argmax. Biases are rounded from the original FP32 model using `input_scale × weight_scale`.
+
+MLP uses one symmetric INT8 weight scale per layer. The FP32 training activations determine input, first-ReLU, and second-ReLU scales. Each layer uses INT8 activations and weights with int32 multiplication and accumulation. Bias is int32 with the corresponding input-activation × weight scale. Hidden-layer requantization uses an integer multiplier with a fixed 24-bit right shift. The 64-bit product is rounded half away from zero, then ReLU-saturated to `[0,127]` in signed INT8 storage. The final layer keeps int32 logits and uses integer argmax. Python reference, host C, and ESP32 use the same constants and rounding semantics.
+
+Every exported neuron records a conservative bound `max(abs(int32 bias)) + inputs × 127 × 127`. The generator fails if that reaches int32 overflow or if the 64-bit requantization product can overflow. Tests include signed half ties, saturation, worst-case bounds, all 256 Python/C predictions, and 10 samples of input, hidden accumulator, requantized activations, final logits, and prediction. Generated C and machine-readable parameters are checked for freshness by CI. `raw_parameter_bytes` includes stored weight/bias arrays, scaler constants, and quantization scales/multipliers/shifts as defined by the exporter; it is distinct from ELF Flash Δ. `declared_local_scratch_bytes` counts temporary INT8 arrays and a scalar accumulator in the source (Logistic 12 B, MLP 28 B); it is not a measured stack peak.
+
+## Hardware protocol and provenance
+
+From a clean code commit, `benchmark/v03_run_hardware.py --port PORT --runs 3` builds a no-model sizing baseline, measures six single-predictor variants, then flashes a timing baseline and each variant. The timing baseline runs the identical 256-row indexing, 100 warm-ups, 2,000 batches of 64 calls, function pointer call, and checksum around a trivial input-dependent predictor. Each variant repeats three times. Interrupts remain enabled; Wi-Fi, Bluetooth, and power management are disabled at 160 MHz. The main table reports **raw** batch-based latency with three decimal places. The machine-readable result also retains the paired timing-baseline value and model-minus-baseline adjustment, including negative values if observed; this subtraction is not treated as an absolute true model cost.
+
+The v0.3 sizing baseline includes the v0.3 harness and both INT8 prediction-oracle arrays. Its Flash deltas are comparable **within v0.3**; differences from the archived v0.2 Flash deltas also include the changed harness and must not be attributed to precision alone.
+
+The firmware checks all 256 predictions against the matching Python oracle before timing and aborts on any mismatch. The build CSV and serial logs must agree on Git commit, dirty state, source, model, sdkconfig, and quantization hashes. The parser also checks the unchanged dataset and subset hashes and refuses mixed configurations. Official results require `git_dirty=false` and are published only under `results/v0.3/`; exploratory dirty runs go under `results/experimental/` or an explicit output path. v0.2 evidence stays under its original paths and tag. Commit code first, measure from that clean commit, then commit the results separately.
+
+## Limits
+
+This is one synthetic task, one trained model pair, one ESP32-S3, one compiler/configuration, and portable scalar kernels. The hardware timing includes input conversion and all preprocessing; the INT8 core itself has no floating-point multiply or requantization. The final quantization result may be smaller, slower, faster, or less accurate; all are reported as observed. The task does not estimate power or real-sensor accuracy, and it does not test optimized ESP-NN/TFLM kernels.

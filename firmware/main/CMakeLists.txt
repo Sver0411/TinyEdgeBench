@@ -3,25 +3,31 @@
 #
 #   idf.py -DTINYEDGEBENCH_MODEL=rule build
 
-set(TINYEDGEBENCH_MODEL "rule" CACHE STRING "Predictor to link: baseline|rule|logistic|tree|mlp")
+set(TINYEDGEBENCH_MODEL "rule" CACHE STRING "Predictor: baseline|timing_baseline|rule|tree|logistic(_fp32|_int8)|mlp(_fp32|_int8)")
 
-if(TINYEDGEBENCH_MODEL STREQUAL "baseline")
+if(TINYEDGEBENCH_MODEL STREQUAL "baseline" OR TINYEDGEBENCH_MODEL STREQUAL "timing_baseline")
     set(TINYEDGEBENCH_SRCS "")
     set(TINYEDGEBENCH_DEFS "")
 elseif(TINYEDGEBENCH_MODEL STREQUAL "rule")
     set(TINYEDGEBENCH_SRCS "models/model_rule.c")
     set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_RULE)
-elseif(TINYEDGEBENCH_MODEL STREQUAL "logistic")
+elseif(TINYEDGEBENCH_MODEL STREQUAL "logistic" OR TINYEDGEBENCH_MODEL STREQUAL "logistic_fp32")
     set(TINYEDGEBENCH_SRCS "models/model_logistic.c")
     set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_LOGISTIC)
 elseif(TINYEDGEBENCH_MODEL STREQUAL "tree")
     set(TINYEDGEBENCH_SRCS "models/model_tree.c")
     set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_TREE)
-elseif(TINYEDGEBENCH_MODEL STREQUAL "mlp")
+elseif(TINYEDGEBENCH_MODEL STREQUAL "mlp" OR TINYEDGEBENCH_MODEL STREQUAL "mlp_fp32")
     set(TINYEDGEBENCH_SRCS "models/model_mlp.c")
     set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_MLP)
+elseif(TINYEDGEBENCH_MODEL STREQUAL "logistic_int8")
+    set(TINYEDGEBENCH_SRCS "models/model_logistic_int8.c")
+    set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_LOGISTIC_INT8)
+elseif(TINYEDGEBENCH_MODEL STREQUAL "mlp_int8")
+    set(TINYEDGEBENCH_SRCS "models/model_mlp_int8.c")
+    set(TINYEDGEBENCH_DEFS TINYEDGEBENCH_HAVE_MLP_INT8)
 else()
-    message(FATAL_ERROR "TINYEDGEBENCH_MODEL must be one of: baseline|rule|logistic|tree|mlp")
+    message(FATAL_ERROR "Unknown TINYEDGEBENCH_MODEL")
 endif()
 
 idf_component_register(
@@ -29,6 +35,7 @@ idf_component_register(
         "main.c"
         "benchmark.c"
         "benchmark_dataset.c"
+        "benchmark_int8_expected.c"
         ${TINYEDGEBENCH_SRCS}
     INCLUDE_DIRS
         "."
@@ -69,6 +76,12 @@ list(APPEND TEB_SOURCE_FILES "${CMAKE_SOURCE_DIR}/../dataset/data.csv"
                              "${CMAKE_SOURCE_DIR}/../benchmark/parse_hardware_log.py"
                              "${CMAKE_SOURCE_DIR}/../benchmark/provenance.py"
                              "${CMAKE_SOURCE_DIR}/../benchmark/run_hardware.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/v03_measure_flash.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/v03_parse_hardware.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/v03_run_hardware.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/update_readme_v03.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/plot_v03.py"
+                             "${CMAKE_SOURCE_DIR}/../results/v0.3/quantization_params.json"
                              "${CMAKE_SOURCE_DIR}/main/CMakeLists.txt")
 list(FILTER TEB_SOURCE_FILES EXCLUDE REGEX "/\\._[^/]+$")
 list(SORT TEB_SOURCE_FILES)
@@ -79,6 +92,7 @@ foreach(TEB_FILE IN LISTS TEB_SOURCE_FILES)
     string(APPEND TEB_HASH_INPUT "${TEB_FILE_HASH}")
 endforeach()
 file(SHA256 "${CMAKE_SOURCE_DIR}/sdkconfig" TEB_CONFIG_HASH)
+file(SHA256 "${CMAKE_SOURCE_DIR}/../results/v0.3/quantization_params.json" TEB_QUANT_HASH)
 string(APPEND TEB_HASH_INPUT "${TEB_CONFIG_HASH}")
 string(SHA256 TEB_SOURCE_HASH "${TEB_HASH_INPUT}")
 if(TINYEDGEBENCH_SRCS)
@@ -88,10 +102,11 @@ else()
 endif()
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     TEB_SOURCE_HASH="${TEB_SOURCE_HASH}" TEB_MODEL_HASH="${TEB_MODEL_HASH}"
-    TEB_CONFIG_HASH="${TEB_CONFIG_HASH}")
+    TEB_CONFIG_HASH="${TEB_CONFIG_HASH}" TEB_QUANT_HASH="${TEB_QUANT_HASH}")
 
 file(WRITE "${CMAKE_BINARY_DIR}/teb_provenance.json"
     "{\"model\":\"${TINYEDGEBENCH_MODEL}\",\"git_commit\":\"${TEB_COMMIT}\","
     "\"git_dirty\":${TEB_GIT_DIRTY},\"source_sha256\":\"${TEB_SOURCE_HASH}\","
     "\"sdkconfig_sha256\":\"${TEB_CONFIG_HASH}\","
-    "\"model_sha256\":\"${TEB_MODEL_HASH}\"}\n")
+    "\"model_sha256\":\"${TEB_MODEL_HASH}\","
+    "\"quantization_sha256\":\"${TEB_QUANT_HASH}\"}\n")

@@ -17,7 +17,10 @@ jobs:
       - run: python training/export_models.py
       - run: python benchmark/export_dataset.py
       - run: git diff --exit-code -- firmware/main/models firmware/main/benchmark_dataset.c firmware/main/benchmark_dataset.h
+      - run: python training/quantize.py
+      - run: git diff --exit-code -- firmware/main/models/model_logistic_int8.c firmware/main/models/model_mlp_int8.c firmware/main/benchmark_int8_expected.c results/v0.3/quantization_params.json results/v0.3/offline_quantization.csv results/v0.3/offline_per_class_f1.csv results/v0.3/offline_confusion.csv
       - run: python benchmark/run_benchmark.py
       - run: git diff --exit-code -- results/benchmark.csv results/confusion.csv
       - run: python benchmark/update_readme.py
+      - run: python benchmark/update_readme_v03.py
       - run: git diff --exit-code -- README.md README.zh-CN.md
