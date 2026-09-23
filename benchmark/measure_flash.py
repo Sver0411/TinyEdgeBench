@@ -44,7 +44,7 @@ RESULTS = ROOT / "results"
 BUILD_DIR = FIRMWARE / "build"
 
 VARIANTS = ("baseline", "rule", "logistic", "tree", "mlp")
-RESTORE_VARIANT = "all"
+RESTORE_VARIANT = "rule"
 
 MISSING_IDF_MESSAGE = (
     "ESP-IDF environment not found.\n"
@@ -118,6 +118,13 @@ def build_and_size(variant, project, *, idf_prefix, size_tool):
             sections[parts[0].lstrip(".")] = int(parts[1])
     if "flash.text" not in sections:
         raise SystemExit(f"could not read ELF sections from {elf}")
+    nm_tool = str(size_tool).removesuffix("-size") + "-nm"
+    symbols = subprocess.run([nm_tool, "-g", "--defined-only", str(elf)],
+                             capture_output=True, text=True, check=True).stdout
+    linked = set(re.findall(r"\bpredict_(rule|logistic|tree|mlp)\b", symbols))
+    expected = set() if variant == "baseline" else ({variant} if variant != "all" else set(VARIANTS[1:]))
+    if linked != expected:
+        raise SystemExit(f"wrong predictors linked for {variant}: {sorted(linked)}")
     return sections
 
 
@@ -154,6 +161,8 @@ def main():
         return sum(sections.get(name, 0) for name in FLASH_SECTIONS)
 
     baseline = total(measured["baseline"])
+    baseline_ram = (measured["baseline"].get("dram0.data", 0)
+                    + measured["baseline"].get("dram0.bss", 0))
     rows = []
     for variant in VARIANTS[1:]:
         sections = measured[variant]
@@ -165,6 +174,9 @@ def main():
             "iram_text_bytes": sections.get("iram0.text", 0),
             "flash_total_bytes": total(sections),
             "flash_delta_bytes": total(sections) - baseline,
+            "bss_bytes": sections.get("dram0.bss", 0),
+            "static_ram_bytes": sections.get("dram0.data", 0) + sections.get("dram0.bss", 0),
+            "static_ram_delta_bytes": sections.get("dram0.data", 0) + sections.get("dram0.bss", 0) - baseline_ram,
         })
 
     out_path = RESULTS / "flash_size.csv"
@@ -180,8 +192,8 @@ def main():
               f"{row['data_bytes']:8d} {row['flash_total_bytes']:8d} {row['flash_delta_bytes']:8d}")
     print(f"\nwrote {out_path}")
 
-    # leave the build tree back in its default configuration (all predictors)
-    print("restoring default build (all four predictors)", flush=True)
+    # leave the build tree in its default single-predictor configuration
+    print("restoring default build (rule)", flush=True)
     build_and_size(RESTORE_VARIANT, project, idf_prefix=idf_prefix, size_tool=size_tool)
 
 

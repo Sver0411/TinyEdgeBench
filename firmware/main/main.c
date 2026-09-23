@@ -1,117 +1,32 @@
-/* TinyEdgeBench ESP32 demo.
- *
- * Runs the linked predictor(s) on a few fixed feature rows and prints the
- * results. No sensors, no Wi-Fi, no tasks - just inference.
- *
- * Which predictors are linked is decided by the CMake option
- * TINYEDGEBENCH_MODEL, so a build can contain one method (that is what
- * benchmark/measure_flash.py uses) or all four (the normal demo).
- *
- * The latency hook at the bottom is there for when a board is available:
- * nothing has been measured on hardware yet.
- */
-
 #include <stdio.h>
-
-#include "esp_timer.h"
+#include "benchmark.h"
 #include "models/model_api.h"
-
-/* Four rows taken from the test split of dataset/data.csv (one per class). */
-static const float demo_features[][NUM_FEATURES] = {
-    {23.372562f, 51.017747f, 434.932639f, -0.098815f, -0.526816f, 1.950311f, 0.968099f, 0.121226f},   /* NORMAL */
-    {22.121322f, 39.824396f, 213.925310f, -0.138429f, -1.243529f, -35.420706f, 1.579823f, 0.680169f}, /* RAPID_CHANGE */
-    {24.972027f, 44.444505f, 444.575250f, -0.141309f, -1.594383f, -15.322257f, 1.682481f, 0.640560f}, /* SLOW_DRIFT */
-    {21.647165f, 45.921643f, 376.171198f, -0.245404f, 0.021942f, 34.874015f, 2.458802f, 0.513554f},   /* NOISY */
-};
 
 const char *const class_names[NUM_CLASSES] = {
     "NORMAL", "RAPID_CHANGE", "SLOW_DRIFT", "NOISY"
 };
 
-#if defined(TINYEDGEBENCH_HAVE_RULE) || defined(TINYEDGEBENCH_HAVE_LOGISTIC) || \
-    defined(TINYEDGEBENCH_HAVE_TREE) || defined(TINYEDGEBENCH_HAVE_MLP)
-#define TINYEDGEBENCH_HAS_PREDICTOR 1
-#endif
-
-#ifdef TINYEDGEBENCH_HAS_PREDICTOR
-
-typedef int (*predict_fn)(const float *);
-
-/* Which methods show up depends on what the build linked in. */
-static const struct {
-    const char *name;
-    predict_fn predict;
-} methods[] = {
-#ifdef TINYEDGEBENCH_HAVE_RULE
-    {"rule", predict_rule},
-#endif
-#ifdef TINYEDGEBENCH_HAVE_LOGISTIC
-    {"logistic", predict_logistic},
-#endif
-#ifdef TINYEDGEBENCH_HAVE_TREE
-    {"tree", predict_tree},
-#endif
-#ifdef TINYEDGEBENCH_HAVE_MLP
-    {"mlp", predict_mlp},
-#endif
-};
-
-#define METHOD_COUNT (sizeof(methods) / sizeof(methods[0]))
-
-static void run_demo(void)
-{
-    size_t rows = sizeof(demo_features) / sizeof(demo_features[0]);
-    for (size_t row = 0; row < rows; row++) {
-        printf("row %u:", (unsigned)row + 1);
-        for (size_t m = 0; m < METHOD_COUNT; m++) {
-            int cls = methods[m].predict(demo_features[row]);
-            printf("  %s=%s", methods[m].name, class_names[cls]);
-        }
-        printf("\n");
-    }
-}
-
-/* Reserved for on-board timing. Reported values are whatever the board
-   measures; no hardware run has happened yet, so nothing is published. */
-static void measure_latency(const float *features)
-{
-    const int iterations = 1000;
-    volatile int sink = 0;
-
-    for (size_t m = 0; m < METHOD_COUNT; m++) {
-        uint64_t start = esp_timer_get_time();
-        for (int i = 0; i < iterations; i++) {
-            sink += methods[m].predict(features);
-        }
-        uint64_t elapsed = esp_timer_get_time() - start;
-
-        printf("%-9s %llu.%03llu us/call (%d iterations)\n",
-               methods[m].name,
-               (unsigned long long)(elapsed / iterations),
-               (unsigned long long)((elapsed % iterations) * 1000 / iterations),
-               iterations);
-    }
-    (void)sink;
-}
-
-#else /* baseline build: no predictor at all */
-
-static void run_demo(void)
-{
-    printf("no predictor linked (baseline build)\n");
-}
-
-static void measure_latency(const float *features)
+#if !defined(TINYEDGEBENCH_HAVE_RULE) && !defined(TINYEDGEBENCH_HAVE_LOGISTIC) && \
+    !defined(TINYEDGEBENCH_HAVE_TREE) && !defined(TINYEDGEBENCH_HAVE_MLP)
+static int predict_baseline(const float *features)
 {
     (void)features;
+    return CLASS_NORMAL;
 }
-
 #endif
 
 void app_main(void)
 {
-    printf("TinyEdgeBench firmware demo\n");
-    run_demo();
-    printf("\nlatency (real hardware only, nothing measured yet):\n");
-    measure_latency(demo_features[0]);
+#if defined(TINYEDGEBENCH_HAVE_RULE)
+    run_benchmark("rule", predict_rule, benchmark_expected_rule);
+#elif defined(TINYEDGEBENCH_HAVE_LOGISTIC)
+    run_benchmark("logistic", predict_logistic, benchmark_expected_logistic);
+#elif defined(TINYEDGEBENCH_HAVE_TREE)
+    run_benchmark("tree", predict_tree, benchmark_expected_tree);
+#elif defined(TINYEDGEBENCH_HAVE_MLP)
+    run_benchmark("mlp", predict_mlp, benchmark_expected_mlp);
+#else
+    printf("TEB_BASELINE no model linked; sizing reference only\n");
+    run_benchmark("baseline", predict_baseline, benchmark_expected_rule);
+#endif
 }

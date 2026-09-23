@@ -5,10 +5,10 @@
 /* Hand-written thresholds from training/rules.py, exported to C.
    Motion is normalised so 1.0 = "moves like sensor noise". */
 #define MOTION_NOISY 2.0f
-#define DRIFT_FAST 0.6f
+#define DRIFT_FAST 0.600000024f
 #define DRIFT_ACTIVE 0.25f
-#define DIRECTED_RATIO 0.4f
-#define NOISY_RATIO 0.35f
+#define DIRECTED_RATIO 0.400000006f
+#define NOISY_RATIO 0.349999994f
 
 /* class_names[] lives in main.c so every build variant links it exactly once. */
 

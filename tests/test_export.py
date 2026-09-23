@@ -69,6 +69,10 @@ def test_rule_thresholds_in_c_match_python(exported):
         assert export_models.c_float(threshold) in source
 
 
+def test_float_export_respects_float32_range():
+    assert export_models.c_float(2.1592647e-74) == "0.0f"
+
+
 def _compile_parity_binary(tmp_path):
     compiler = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if compiler is None:

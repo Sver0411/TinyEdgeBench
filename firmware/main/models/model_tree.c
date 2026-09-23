@@ -7,7 +7,7 @@
 int predict_tree(const float *features)
 {
     if (features[F_MOTION] <= 1.68166351f) {
-        if (features[F_DRIFT] <= 0.228236504f) {
+        if (features[F_DRIFT] <= 0.228236496f) {
             if (features[F_DRIFT] <= 0.166820005f) {
                 if (features[F_HUM] <= 27.2742748f) {
                     if (features[F_HUM] <= 26.4242172f) {
@@ -16,7 +16,7 @@ int predict_tree(const float *features)
                         return CLASS_SLOW_DRIFT;
                     }
                 } else {
-                    if (features[F_DRIFT] <= 0.134244002f) {
+                    if (features[F_DRIFT] <= 0.134243995f) {
                         return CLASS_NORMAL;
                     } else {
                         return CLASS_NORMAL;
@@ -24,13 +24,13 @@ int predict_tree(const float *features)
                 }
             } else {
                 if (features[F_TEMP] <= 24.5739937f) {
-                    if (features[F_LIGHT] <= 202.511589f) {
+                    if (features[F_LIGHT] <= 202.511597f) {
                         return CLASS_NORMAL;
                     } else {
                         return CLASS_NORMAL;
                     }
                 } else {
-                    if (features[F_TEMP] <= 24.9913397f) {
+                    if (features[F_TEMP] <= 24.9913406f) {
                         return CLASS_SLOW_DRIFT;
                     } else {
                         return CLASS_NORMAL;
@@ -38,15 +38,15 @@ int predict_tree(const float *features)
                 }
             }
         } else {
-            if (features[F_MOTION] <= 1.34476f) {
+            if (features[F_MOTION] <= 1.34475994f) {
                 if (features[F_DRIFT] <= 0.282427013f) {
-                    if (features[F_D_LIGHT] <= 9.78541613f) {
+                    if (features[F_D_LIGHT] <= 9.78541565f) {
                         return CLASS_SLOW_DRIFT;
                     } else {
                         return CLASS_NORMAL;
                     }
                 } else {
-                    if (features[F_MOTION] <= 1.1117f) {
+                    if (features[F_MOTION] <= 1.11170006f) {
                         return CLASS_SLOW_DRIFT;
                     } else {
                         return CLASS_SLOW_DRIFT;
@@ -54,7 +54,7 @@ int predict_tree(const float *features)
                 }
             } else {
                 if (features[F_DRIFT] <= 0.612865984f) {
-                    if (features[F_DRIFT] <= 0.307225004f) {
+                    if (features[F_DRIFT] <= 0.307224989f) {
                         return CLASS_SLOW_DRIFT;
                     } else {
                         return CLASS_SLOW_DRIFT;
@@ -70,7 +70,7 @@ int predict_tree(const float *features)
         }
     } else {
         if (features[F_MOTION] <= 2.74786401f) {
-            if (features[F_DRIFT] <= 0.558521479f) {
+            if (features[F_DRIFT] <= 0.558521509f) {
                 if (features[F_MOTION] <= 1.92434049f) {
                     if (features[F_DRIFT] <= 0.392354995f) {
                         return CLASS_NOISY;
@@ -100,18 +100,18 @@ int predict_tree(const float *features)
                 }
             }
         } else {
-            if (features[F_DRIFT] <= 1.68596405f) {
-                if (features[F_DRIFT] <= 1.47989303f) {
+            if (features[F_DRIFT] <= 1.68596411f) {
+                if (features[F_DRIFT] <= 1.47989297f) {
                     return CLASS_NOISY;
                 } else {
-                    if (features[F_MOTION] <= 3.4039284f) {
+                    if (features[F_MOTION] <= 3.40392828f) {
                         return CLASS_RAPID_CHANGE;
                     } else {
                         return CLASS_NOISY;
                     }
                 }
             } else {
-                if (features[F_MOTION] <= 4.15310502f) {
+                if (features[F_MOTION] <= 4.15310478f) {
                     return CLASS_RAPID_CHANGE;
                 } else {
                     return CLASS_NOISY;
