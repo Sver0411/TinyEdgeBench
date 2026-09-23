@@ -5,12 +5,12 @@
 TinyEdgeBench compares four small classifiers on one sensor-window task, using the same eight features, the same test rows, and one ESP32-S3 board. It asks whether extra classification quality is worth the compiled Flash, static RAM, heap, and inference time.
 
 <!-- HARDWARE_TABLE_START -->
-| Model | Accuracy | Macro F1 | Flash Δ | Static RAM Δ | Stack peak | Heap Δ | p50 µs | p95 µs | p99 µs |
+| Model | Accuracy (3,000) | Macro F1 (3,000) | Flash Δ | Static RAM Δ | Inference heap alloc | p50 µs | p95 µs | p99 µs |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Rule | 0.6719 | 0.6331 | 40 B | 0 B | 1616 B | 0 B | 2.0 ± 0.0 | 2.0 ± 0.0 | 2.0 ± 0.0 |
-| Logistic | 0.8516 | 0.8508 | 204 B | 0 B | 1616 B | 0 B | 3.0 ± 0.0 | 4.0 ± 0.0 | 4.0 ± 0.0 |
-| Tree | 0.8164 | 0.8142 | 284 B | 0 B | 1616 B | 0 B | 1.0 ± 0.0 | 2.0 ± 0.0 | 2.0 ± 0.0 |
-| MLP | 0.8438 | 0.8420 | 944 B | 0 B | 1616 B | 0 B | 9.0 ± 0.0 | 10.0 ± 0.0 | 10.0 ± 0.0 |
+| Rule | 0.6963 | 0.6604 | 40 B | 0 B | 0 B | 0.7 ± 0.0 | 0.7 ± 0.0 | 0.7 ± 0.0 |
+| Logistic | 0.8283 | 0.8256 | 204 B | 0 B | 0 B | 2.3 ± 0.0 | 2.3 ± 0.0 | 2.4 ± 0.0 |
+| Tree | 0.8203 | 0.8167 | 284 B | 0 B | 0 B | 0.3 ± 0.0 | 0.4 ± 0.0 | 0.4 ± 0.0 |
+| MLP | 0.8250 | 0.8214 | 944 B | 0 B | 0 B | 8.4 ± 0.0 | 8.5 ± 0.0 | 8.5 ± 0.0 |
 <!-- HARDWARE_TABLE_END -->
 
 Accuracy and F1 in this table are from the **full 3,000-row synthetic test split**. Flash and static RAM are build measurements. Latency and heap come from the physical ESP32-S3. The 256-row board subset checks prediction parity and has separate accuracy in the [hardware results](results/hardware/). `benchmark/update_readme.py` generates this table. Power: **Not measured yet**.
@@ -20,6 +20,8 @@ Inference heap allocation of 0 B means these predictors made no dynamic allocati
 ## Hardware validation
 
 The ESP32-S3 runs each of the four predictors three times at 160 MHz with ESP-IDF v5.4.4, performance optimization, and Wi-Fi and Bluetooth disabled. Each run checks **256/256 predictions against its Python reference** before timing, then uses 100 warm-ups and 2,000 timed batches of 64 predictions. The 256-row subset checks implementation parity; the full test split supplies the quality values above.
+
+On this synthetic task and board configuration, logistic regression has the highest full-test accuracy and macro F1 of the four tested methods, with 204 B of incremental compiled Flash versus 944 B for the tested MLP. Tree has the lowest measured batch latency. These comparisons describe this workload and configuration.
 
 ## Task and models
 
