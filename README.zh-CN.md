@@ -9,16 +9,28 @@ TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测
 便携式标量 INT8 使用仅来自训练集的校准、INT8 权重和激活、int32 累加，以及隐藏层整数定点重标定。输入 StandardScaler 预处理仍使用 FP32。六种实现采用相同数据、ESP32-S3 和批次计时协议。主表延迟是**未扣除 baseline 的原始值**。
 
 <!-- V03_MAIN_START -->
-等待干净代码提交上的正式真机实验。
+| Model | Precision | Test accuracy | Macro F1 | Flash Δ | Raw params | Raw p50 µs | Raw p95 µs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Rule | NATIVE | 0.6963 | 0.6604 | 492 B | 20 B | 0.672 ± 0.000 | 0.688 ± 0.000 |
+| Tree | NATIVE | 0.8203 | 0.8167 | 752 B | N/A | 0.344 ± 0.000 | 0.359 ± 0.000 |
+| Logistic | FP32 | 0.8283 | 0.8256 | 656 B | 208 B | 2.297 ± 0.000 | 2.297 ± 0.000 |
+| Logistic | INT8 | 0.8283 | 0.8253 | 624 B | 128 B | 4.375 ± 0.000 | 4.391 ± 0.000 |
+| MLP | FP32 | 0.8250 | 0.8214 | 1,396 B | 784 B | 8.359 ± 0.000 | 8.484 ± 0.000 |
+| MLP | INT8 | 0.8220 | 0.8178 | 1,104 B | 354 B | 13.750 ± 0.000 | 13.875 ± 0.000 |
 <!-- V03_MAIN_END -->
 
 ### 量化效果
 
 <!-- V03_COMPARE_START -->
-等待干净代码提交上的正式真机实验。
+| Pair | Δ accuracy | Δ Macro F1 | Flash saving | Raw p50 change |
+| --- | ---: | ---: | ---: | ---: |
+| Logistic INT8 − FP32 | +0.0000 | -0.0004 | +32 B (+4.9%) | +2.078 µs (+90.5%) |
+| Mlp INT8 − FP32 | -0.0030 | -0.0036 | +292 B (+20.9%) | +5.391 µs (+64.5%) |
 <!-- V03_COMPARE_END -->
 
 [v0.3 量化方法](docs/quantization_methodology.md)定义了校准、舍入、饱和、整数累加、存储计数及成对 timing baseline 扣除。每类 F1 和混淆矩阵保存在 `results/v0.3/`。功耗与真实传感器准确率：**Not measured yet**。
+
+在这项任务与 ESP32-S3 配置下，两种标量 INT8 实现均节省了编译 Flash，但原始推理延迟增加。Logistic 保持完整测试集准确率，Macro F1 略降；MLP 的准确率和 Macro F1 都有所下降。本次构建六种实现的 Static RAM Δ 与推理堆分配量均为 0 B，这不代表模型不占 RAM。成对 timing baseline 与扣除后的数值保存在[硬件结果 CSV](results/v0.3/hardware_benchmark.csv)。另见[四张 v0.3 图](results/v0.3/plots/)及[整数核心反汇编检查](results/v0.3/integer_core_evidence.txt)。
 
 ## 已归档的 v0.2 FP32 基线
 

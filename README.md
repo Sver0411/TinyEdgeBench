@@ -9,16 +9,28 @@ TinyEdgeBench compares four small classifier families on one sensor-window task,
 Portable scalar INT8 uses training-only calibration, signed INT8 weights and activations, int32 accumulators, and integer fixed-point hidden-layer requantization. Input StandardScaler preprocessing remains FP32. All six implementations use the same dataset, ESP32-S3, and batch-timing protocol. The main latency values are **raw**, with no baseline subtraction.
 
 <!-- V03_MAIN_START -->
-Pending clean-commit hardware measurement.
+| Model | Precision | Test accuracy | Macro F1 | Flash Δ | Raw params | Raw p50 µs | Raw p95 µs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Rule | NATIVE | 0.6963 | 0.6604 | 492 B | 20 B | 0.672 ± 0.000 | 0.688 ± 0.000 |
+| Tree | NATIVE | 0.8203 | 0.8167 | 752 B | N/A | 0.344 ± 0.000 | 0.359 ± 0.000 |
+| Logistic | FP32 | 0.8283 | 0.8256 | 656 B | 208 B | 2.297 ± 0.000 | 2.297 ± 0.000 |
+| Logistic | INT8 | 0.8283 | 0.8253 | 624 B | 128 B | 4.375 ± 0.000 | 4.391 ± 0.000 |
+| MLP | FP32 | 0.8250 | 0.8214 | 1,396 B | 784 B | 8.359 ± 0.000 | 8.484 ± 0.000 |
+| MLP | INT8 | 0.8220 | 0.8178 | 1,104 B | 354 B | 13.750 ± 0.000 | 13.875 ± 0.000 |
 <!-- V03_MAIN_END -->
 
 ### Quantization effect
 
 <!-- V03_COMPARE_START -->
-Pending clean-commit hardware measurement.
+| Pair | Δ accuracy | Δ Macro F1 | Flash saving | Raw p50 change |
+| --- | ---: | ---: | ---: | ---: |
+| Logistic INT8 − FP32 | +0.0000 | -0.0004 | +32 B (+4.9%) | +2.078 µs (+90.5%) |
+| Mlp INT8 − FP32 | -0.0030 | -0.0036 | +292 B (+20.9%) | +5.391 µs (+64.5%) |
 <!-- V03_COMPARE_END -->
 
 The [v0.3 quantization method](docs/quantization_methodology.md) defines calibration, rounding, saturation, integer accumulation, storage accounting, and paired timing-baseline subtraction. Full per-class F1 and confusion matrices are machine-readable in `results/v0.3/`. Power and real-sensor accuracy: **Not measured yet**.
+
+On this task and ESP32-S3 configuration, both scalar INT8 implementations reduce compiled Flash but increase raw inference latency. Logistic retains full-test accuracy with a small Macro F1 decrease; MLP loses some accuracy and Macro F1. All six variants have 0 B Static RAM Δ and 0 B inference heap allocation in this build; that does not mean they use no RAM. The paired timing baseline and adjusted values remain in the [machine-readable hardware result](results/v0.3/hardware_benchmark.csv). See the [four v0.3 plots](results/v0.3/plots/) and [integer-core disassembly check](results/v0.3/integer_core_evidence.txt).
 
 ## Archived v0.2 FP32 baseline
 

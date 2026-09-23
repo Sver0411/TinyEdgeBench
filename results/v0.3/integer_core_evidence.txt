@@ -1,0 +1,22 @@
+TinyEdgeBench v0.3 integer-core disassembly check
+Code commit: aa4717f97bcc96e738af1ae478c8b0ccd0a3434c
+Toolchain: ESP-IDF v5.4.4, xtensa-esp32s3-elf GCC 14.2.0, performance optimization
+
+Reproduce after each single-model build:
+  idf.py -DTINYEDGEBENCH_MODEL=logistic_int8 build
+  xtensa-esp32s3-elf-objdump -d build/esp-idf/main/CMakeFiles/__idf_main.dir/models/model_logistic_int8.c.obj
+  idf.py -DTINYEDGEBENCH_MODEL=mlp_int8 build
+  xtensa-esp32s3-elf-objdump -d build/esp-idf/main/CMakeFiles/__idf_main.dir/models/model_mlp_int8.c.obj
+
+Observed in predict_logistic_int8:
+  mul.s at offsets 0x3e and 0x41: FP32 input StandardScaler/quantization preprocessing.
+  l8ui at 0x99 and 0x9c, mul16s at 0xa5: integer activation/weight MAC.
+
+Observed in predict_mlp_int8:
+  mul.s at offsets 0x42 and 0x45: FP32 input preprocessing.
+  l8ui and mul16s at 0xad, 0x130 and 0x1a8: three integer MAC layers.
+  mull at 0xbb and 0x13e: fixed-point hidden-layer requantization.
+
+The scalar INT8 core uses integer arithmetic. Input preprocessing is FP32, so
+the whole predictor is not claimed to be integer-only. This inspection checks
+instruction class, not runtime cost; measured timings are in hardware_benchmark.csv.
