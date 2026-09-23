@@ -1,6 +1,7 @@
 """Host checks for the fixed ESP32 dataset and machine-readable log contract."""
 
 import hashlib
+import csv
 import json
 from pathlib import Path
 import re
@@ -62,17 +63,18 @@ def sample_log(model="rule"):
     subset_sha = re.search(r'const char benchmark_subset_sha256\[\] = "([0-9a-f]{64})"',
                            (MAIN / "benchmark_dataset.c").read_text()).group(1)
     meta = {"model": model, "chip": "ESP32-S3", "samples": 256,
-            "warmup": 100, "iterations": 10000, "dataset_sha256": sha,
+            "warmup": 100, "iterations": 128000, "timed_batches": 2000,
+            "inferences_per_batch": 64, "dataset_sha256": sha,
             "subset_sha256": subset_sha,
-            "upstream_commit": "test", "source_sha256": "source",
+            "git_commit": "test", "git_dirty": False, "source_sha256": "source",
             "model_sha256": "model", "sdkconfig_sha256": "config",
             "cpu_mhz": 240, "idf": "v5.4.4", "compiler": "GCC 14.2.0",
             "optimization": "performance", "image_flash_size": "16MB"}
     result = {"model": model, "samples": 256, "correct": 256,
               "confusion": [64 if i % 5 == 0 else 0 for i in range(16)],
-              "latency_min_us": 0, "latency_p50_us": 1,
-              "latency_p95_us": 2, "latency_p99_us": 3,
-              "latency_max_us": 4, "heap_before_bytes": 1000,
+              "latency_min_us": 0.125, "latency_p50_us": 1.125,
+              "latency_p95_us": 2.125, "latency_p99_us": 3.125,
+              "latency_max_us": 4.125, "heap_before_bytes": 1000,
               "heap_after_bytes": 1000}
     return "\n".join(f"{key} {json.dumps(value)}" for key, value in
                      (("TEB_BEGIN", meta), ("TEB_RESULT", result),
@@ -82,14 +84,29 @@ def sample_log(model="rule"):
 def test_parser_and_schema(tmp_path):
     log = tmp_path / "sample.log"
     log.write_text(sample_log())
-    rows = parser.write_results([log], tmp_path / "out")
+    size = tmp_path / "sizes.csv"
+    with size.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=("method", "git_commit", "git_dirty",
+            "source_sha256", "model_sha256", "sdkconfig_sha256",
+            "flash_delta_bytes", "static_ram_delta_bytes"))
+        writer.writeheader()
+        writer.writerow(dict(method="rule", git_commit="test", git_dirty="false",
+                             source_sha256="source", model_sha256="model",
+                             sdkconfig_sha256="config", flash_delta_bytes=40,
+                             static_ram_delta_bytes=0))
+    rows = parser.write_results([log], tmp_path / "out", size)
     assert len(rows) == 1 and rows[0]["accuracy"] == 1
     assert rows[0]["macro_f1"] == 1
+    assert rows[0]["latency_p50_us"] == 1.125
     with (tmp_path / "out/hardware_benchmark.csv").open() as handle:
         assert handle.readline().strip().split(",") == list(parser.FIELDS)
     metadata = json.loads((tmp_path / "out/hardware_metadata.json").read_text())
     assert metadata[0]["dataset_sha256"] == hashlib.sha256(
         (ROOT / "dataset/data.csv").read_bytes()).hexdigest()
+    log.write_text(sample_log().replace('"git_commit": "test"',
+                                        '"git_commit": "other"'))
+    with pytest.raises(ValueError, match="build-size result does not belong"):
+        parser.write_results([log], tmp_path / "bad", size)
 
 
 @pytest.mark.parametrize("bad", ["", "TEB_RESULT {}", "TEB_BEGIN {}",
@@ -130,3 +147,30 @@ int main(void) {
     binary = tmp_path / "percentile"
     subprocess.run([cc, "-I", str(MAIN), str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+
+
+def test_committed_hardware_results_have_one_clean_build_provenance():
+    output = ROOT / "results/hardware"
+    metadata = json.loads((output / "hardware_metadata.json").read_text())
+    with (output / "hardware_benchmark.csv").open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    with (ROOT / "results/flash_size.csv").open(newline="") as handle:
+        sizes = {row["method"]: row for row in csv.DictReader(handle)}
+    assert len(rows) == len(metadata) == 12
+    assert {model: sum(row["model"] == model for row in rows)
+            for model in parser.MODELS} == dict.fromkeys(parser.MODELS, 3)
+    assert all(item["git_dirty"] is False for item in metadata)
+    for key in ("git_commit", "dataset_sha256", "subset_sha256", "sdkconfig_sha256",
+                "cpu_mhz", "idf", "optimization", "source_sha256"):
+        assert len({item[key] for item in metadata}) == 1
+    for item in metadata:
+        size = sizes[item["model"]]
+        for key in ("git_commit", "source_sha256", "sdkconfig_sha256", "model_sha256"):
+            assert item[key] == size[key]
+        assert size["git_dirty"].lower() == "false"
+        capture = (output / "raw_serial_logs" / item["raw_log"]).read_text()
+        assert "MAC:" not in capture and "Serial port:" not in capture
+        records = parser.parse_log(capture)
+        assert len(records) == 1
+        assert records[0]["metadata"]["git_commit"] == item["git_commit"]
+        assert records[0]["metadata"]["model"] == item["model"]

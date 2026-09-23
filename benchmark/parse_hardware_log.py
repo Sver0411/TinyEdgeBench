@@ -6,6 +6,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 
@@ -16,8 +17,9 @@ FIELDS = ("model", "run", "accuracy", "macro_f1", "correct", "samples",
           "checksum", "latency_min_us", "latency_mean_us", "latency_p50_us",
           "latency_p95_us", "latency_p99_us", "latency_max_us",
           "heap_before_bytes", "heap_after_bytes", "heap_minimum_bytes",
-          "stack_configured_bytes", "stack_minimum_remaining_bytes",
-          "flash_delta_bytes", "static_ram_delta_bytes")
+          "main_task_stack_configured_bytes", "main_task_stack_minimum_remaining_bytes",
+          "flash_delta_bytes", "static_ram_delta_bytes", "git_commit", "git_dirty")
+BUILD_MISMATCH = "ERROR: build-size result does not belong to this hardware benchmark."
 
 
 def parse_log(text: str):
@@ -58,17 +60,21 @@ def parse_log(text: str):
 
 def validate(record):
     meta, result = record["metadata"], record["result"]
-    required = ("upstream_commit", "source_sha256", "model_sha256",
+    required = ("git_commit", "source_sha256", "model_sha256",
                 "sdkconfig_sha256", "idf", "compiler", "cpu_mhz",
                 "optimization", "image_flash_size", "subset_sha256")
     if any(not meta.get(key) for key in required):
         raise ValueError("missing hardware provenance")
+    if not isinstance(meta.get("git_dirty"), bool):
+        raise ValueError("missing git dirty provenance")
     if meta["model"] not in MODELS or meta["chip"] != "ESP32-S3":
         raise ValueError("unexpected model/chip")
     if meta["samples"] != result["samples"] or meta["samples"] != 256:
         raise ValueError("unexpected sample count")
-    if meta["iterations"] < 10000 or meta["warmup"] < 100:
-        raise ValueError("insufficient iterations or warmup")
+    if (meta["timed_batches"] < 2000 or meta["inferences_per_batch"] != 64
+            or meta["iterations"] != meta["timed_batches"] * meta["inferences_per_batch"]
+            or meta["warmup"] < 100):
+        raise ValueError("invalid batch timing configuration")
     if meta["dataset_sha256"] != hashlib.sha256((ROOT / "dataset/data.csv").read_bytes()).hexdigest():
         raise ValueError("dataset hash mismatch")
     match = re.search(r'const char benchmark_subset_sha256\[\] = "([0-9a-f]{64})"',
@@ -81,6 +87,9 @@ def validate(record):
     if sum(cm[i * 4 + i] for i in range(4)) != result["correct"]:
         raise ValueError("correct count mismatch")
     latency = [result[f"latency_{p}_us"] for p in ("min", "p50", "p95", "p99", "max")]
+    if not all(isinstance(value, (float, int)) and math.isfinite(value) and value >= 0
+               for value in latency):
+        raise ValueError("invalid latency")
     if latency != sorted(latency):
         raise ValueError("latency percentiles out of order")
     if result["heap_after_bytes"] > result["heap_before_bytes"] + 4096:
@@ -106,12 +115,10 @@ def load_build_sizes(path=ROOT / "results/flash_size.csv"):
         return {row["method"]: row for row in csv.DictReader(handle)}
 
 
-def write_results(log_paths, output=RESULTS):
-    output.mkdir(parents=True, exist_ok=True)
-    raw = output / "raw_serial_logs"
-    raw.mkdir(exist_ok=True)
-    sizes = load_build_sizes()
+def write_results(log_paths, output=RESULTS, build_sizes=ROOT / "results/flash_size.csv"):
+    sizes = load_build_sizes(Path(build_sizes))
     rows, metadata = [], []
+    captures = []
     run_counts = {model: 0 for model in MODELS}
     for path in map(Path, log_paths):
         content = path.read_text(errors="replace")
@@ -123,17 +130,33 @@ def write_results(log_paths, output=RESULTS):
             row = {key: result[key] for key in FIELDS if key in result}
             row.update(model=model, run=run,
                        accuracy=result["correct"] / result["samples"],
-                       macro_f1=macro_f1(result["confusion"]))
-            row["flash_delta_bytes"] = sizes.get(model, {}).get("flash_delta_bytes", "")
-            row["static_ram_delta_bytes"] = sizes.get(model, {}).get("static_ram_delta_bytes", "")
+                       macro_f1=macro_f1(result["confusion"]),
+                       git_commit=meta["git_commit"], git_dirty=meta["git_dirty"])
+            size = sizes.get(model)
+            if size is None or any(str(size.get(key, "")).lower() != str(meta[key]).lower()
+                                   for key in ("git_commit", "git_dirty", "source_sha256",
+                                               "sdkconfig_sha256", "model_sha256")):
+                raise ValueError(BUILD_MISMATCH)
+            row["flash_delta_bytes"] = size["flash_delta_bytes"]
+            row["static_ram_delta_bytes"] = size["static_ram_delta_bytes"]
             rows.append(row)
             metadata.append({**meta, "run": run, "raw_log": path.name})
-        if path.parent != raw:
-            (raw / path.name).write_text(content)
-    for key in ("source_sha256", "sdkconfig_sha256", "dataset_sha256", "subset_sha256",
+        captures.append((path.name, content))
+    for key in ("git_commit", "git_dirty", "source_sha256", "sdkconfig_sha256", "dataset_sha256", "subset_sha256",
                 "idf", "compiler", "cpu_mhz", "optimization", "image_flash_size"):
         if len({item[key] for item in metadata}) != 1:
             raise ValueError(f"mixed hardware configurations: {key}")
+    output.mkdir(parents=True, exist_ok=True)
+    raw = output / "raw_serial_logs"
+    raw.mkdir(exist_ok=True)
+    for old in raw.glob("*.log"):
+        old.unlink()
+    for name, content in captures:
+        # Serial boot banners may contain a MAC address; retain only benchmark records.
+        public_lines = [line for line in content.splitlines()
+                        if any(marker + " " in line for marker in
+                               ("TEB_BEGIN", "TEB_RESULT", "TEB_END", "TEB_ERROR"))]
+        (raw / name).write_text("\n".join(public_lines) + "\n")
     with (output / "hardware_benchmark.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
         writer.writeheader()
@@ -146,8 +169,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("logs", nargs="+", type=Path)
     parser.add_argument("--output", type=Path, default=RESULTS)
+    parser.add_argument("--build-sizes", type=Path, default=ROOT / "results/flash_size.csv")
     args = parser.parse_args()
-    rows = write_results(args.logs, args.output)
+    rows = write_results(args.logs, args.output, args.build_sizes)
     print(f"wrote {len(rows)} validated runs to {args.output}")
 
 

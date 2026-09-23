@@ -40,15 +40,25 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE ${TINYEDGEBENCH_DEFS})
 
-# The archive fallback keeps provenance when GitHub's Git endpoint is offline.
+# Formal runs require a real checkout; an archive build is explicitly untracked.
 execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..
                 OUTPUT_VARIABLE TEB_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET)
 if(NOT TEB_COMMIT)
-    file(READ "${CMAKE_SOURCE_DIR}/../.upstream_commit" TEB_COMMIT)
-    string(STRIP "${TEB_COMMIT}" TEB_COMMIT)
+    set(TEB_COMMIT "unknown")
+    set(TEB_GIT_DIRTY "true")
+else()
+    execute_process(COMMAND git status --porcelain --untracked-files=all
+                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..
+                    OUTPUT_VARIABLE TEB_GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(TEB_GIT_STATUS)
+        set(TEB_GIT_DIRTY "true")
+    else()
+        set(TEB_GIT_DIRTY "false")
+    endif()
 endif()
-target_compile_definitions(${COMPONENT_TARGET} PRIVATE TEB_SOURCE_COMMIT="${TEB_COMMIT}")
+target_compile_definitions(${COMPONENT_TARGET} PRIVATE
+    TEB_GIT_COMMIT="${TEB_COMMIT}" TEB_GIT_DIRTY=${TEB_GIT_DIRTY})
 
 file(GLOB_RECURSE TEB_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/main/*.c" "${CMAKE_SOURCE_DIR}/main/*.h"
@@ -57,6 +67,7 @@ list(APPEND TEB_SOURCE_FILES "${CMAKE_SOURCE_DIR}/../dataset/data.csv"
                              "${CMAKE_SOURCE_DIR}/../benchmark/export_dataset.py"
                              "${CMAKE_SOURCE_DIR}/../benchmark/measure_flash.py"
                              "${CMAKE_SOURCE_DIR}/../benchmark/parse_hardware_log.py"
+                             "${CMAKE_SOURCE_DIR}/../benchmark/provenance.py"
                              "${CMAKE_SOURCE_DIR}/../benchmark/run_hardware.py"
                              "${CMAKE_SOURCE_DIR}/main/CMakeLists.txt")
 list(FILTER TEB_SOURCE_FILES EXCLUDE REGEX "/\\._[^/]+$")
@@ -78,3 +89,9 @@ endif()
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     TEB_SOURCE_HASH="${TEB_SOURCE_HASH}" TEB_MODEL_HASH="${TEB_MODEL_HASH}"
     TEB_CONFIG_HASH="${TEB_CONFIG_HASH}")
+
+file(WRITE "${CMAKE_BINARY_DIR}/teb_provenance.json"
+    "{\"model\":\"${TINYEDGEBENCH_MODEL}\",\"git_commit\":\"${TEB_COMMIT}\","
+    "\"git_dirty\":${TEB_GIT_DIRTY},\"source_sha256\":\"${TEB_SOURCE_HASH}\","
+    "\"sdkconfig_sha256\":\"${TEB_CONFIG_HASH}\","
+    "\"model_sha256\":\"${TEB_MODEL_HASH}\"}\n")

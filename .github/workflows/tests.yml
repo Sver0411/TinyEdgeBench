@@ -14,3 +14,10 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
       - run: python -m pytest tests/ -q
+      - run: python training/export_models.py
+      - run: python benchmark/export_dataset.py
+      - run: git diff --exit-code -- firmware/main/models firmware/main/benchmark_dataset.c firmware/main/benchmark_dataset.h
+      - run: python benchmark/run_benchmark.py
+      - run: git diff --exit-code -- results/benchmark.csv results/confusion.csv
+      - run: python benchmark/update_readme.py
+      - run: git diff --exit-code -- README.md README.zh-CN.md

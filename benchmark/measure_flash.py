@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json
 import os
 import re
 import shutil
@@ -125,7 +126,10 @@ def build_and_size(variant, project, *, idf_prefix, size_tool):
     expected = set() if variant == "baseline" else ({variant} if variant != "all" else set(VARIANTS[1:]))
     if linked != expected:
         raise SystemExit(f"wrong predictors linked for {variant}: {sorted(linked)}")
-    return sections
+    provenance = json.loads((BUILD_DIR / "teb_provenance.json").read_text())
+    if provenance["model"] != variant:
+        raise SystemExit(f"wrong build provenance for {variant}")
+    return sections, provenance
 
 
 def main():
@@ -135,6 +139,7 @@ def main():
     parser.add_argument("--target", default="esp32s3", help="IDF target, e.g. esp32s3")
     parser.add_argument("--tools-path", default=os.environ.get("IDF_TOOLS_PATH"),
                         help="IDF_TOOLS_PATH (defaults to $IDF_TOOLS_PATH)")
+    parser.add_argument("--output", type=Path, default=RESULTS / "flash_size.csv")
     args = parser.parse_args()
 
     idf_prefix = how_to_run_idf(args.idf_path)
@@ -148,7 +153,6 @@ def main():
             "Activate an ESP-IDF environment or set IDF_TOOLS_PATH."
         )
 
-    RESULTS.mkdir(parents=True, exist_ok=True)
     project = find_project_name()
 
     measured = {}
@@ -160,14 +164,16 @@ def main():
     def total(sections):
         return sum(sections.get(name, 0) for name in FLASH_SECTIONS)
 
-    baseline = total(measured["baseline"])
-    baseline_ram = (measured["baseline"].get("dram0.data", 0)
-                    + measured["baseline"].get("dram0.bss", 0))
+    baseline = total(measured["baseline"][0])
+    baseline_ram = (measured["baseline"][0].get("dram0.data", 0)
+                    + measured["baseline"][0].get("dram0.bss", 0))
     rows = []
     for variant in VARIANTS[1:]:
-        sections = measured[variant]
+        sections, provenance = measured[variant]
         rows.append({
             "method": variant,
+            **{key: provenance[key] for key in ("git_commit", "git_dirty", "source_sha256",
+                                                   "sdkconfig_sha256", "model_sha256")},
             "text_bytes": sections.get("flash.text", 0),
             "rodata_bytes": sections.get("flash.rodata", 0),
             "data_bytes": sections.get("dram0.data", 0),
@@ -179,7 +185,14 @@ def main():
             "static_ram_delta_bytes": sections.get("dram0.data", 0) + sections.get("dram0.bss", 0) - baseline_ram,
         })
 
-    out_path = RESULTS / "flash_size.csv"
+    for key in ("git_commit", "git_dirty", "source_sha256", "sdkconfig_sha256"):
+        if len({str(item[1][key]) for item in measured.values()}) != 1:
+            raise SystemExit(f"mixed build provenance: {key}")
+    # Restore the default before publishing the completed measurement.
+    print("restoring default build (rule)", flush=True)
+    build_and_size(RESTORE_VARIANT, project, idf_prefix=idf_prefix, size_tool=size_tool)
+    out_path = args.output
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -192,9 +205,6 @@ def main():
               f"{row['data_bytes']:8d} {row['flash_total_bytes']:8d} {row['flash_delta_bytes']:8d}")
     print(f"\nwrote {out_path}")
 
-    # leave the build tree in its default single-predictor configuration
-    print("restoring default build (rule)", flush=True)
-    build_and_size(RESTORE_VARIANT, project, idf_prefix=idf_prefix, size_tool=size_tool)
 
 
 if __name__ == "__main__":

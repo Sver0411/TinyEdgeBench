@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-TinyEdgeBench compares four small classifiers on one sensor-window task, using the same eight features, the same test rows, and one ESP32-S3 board. It asks whether extra classification quality is worth the compiled Flash, static RAM, stack, heap, and inference time.
+TinyEdgeBench compares four small classifiers on one sensor-window task, using the same eight features, the same test rows, and one ESP32-S3 board. It asks whether extra classification quality is worth the compiled Flash, static RAM, heap, and inference time.
 
 <!-- HARDWARE_TABLE_START -->
 | Model | Accuracy | Macro F1 | Flash Δ | Static RAM Δ | Stack peak | Heap Δ | p50 µs | p95 µs | p99 µs |
@@ -13,7 +13,13 @@ TinyEdgeBench compares four small classifiers on one sensor-window task, using t
 | MLP | 0.8438 | 0.8420 | 944 B | 0 B | 1616 B | 0 B | 9.0 ± 0.0 | 10.0 ± 0.0 | 10.0 ± 0.0 |
 <!-- HARDWARE_TABLE_END -->
 
-The accuracy and F1 in this table are **hardware predictions on the fixed 256-row synthetic test subset**. Flash and static RAM are build measurements. Latency, heap, and stack come from the physical ESP32-S3. [Raw logs and machine-readable results](results/hardware/) are the source of this table; `benchmark/update_readme.py` generates it. Power: **Not measured yet**.
+Accuracy and F1 in this table are from the **full 3,000-row synthetic test split**. Flash and static RAM are build measurements. Latency and heap come from the physical ESP32-S3. The 256-row board subset checks prediction parity and has separate accuracy in the [hardware results](results/hardware/). `benchmark/update_readme.py` generates this table. Power: **Not measured yet**.
+
+Inference heap allocation of 0 B means these predictors made no dynamic allocation during inference; it does not mean the models use no RAM.
+
+## Hardware validation
+
+The ESP32-S3 runs each of the four predictors three times at 160 MHz with ESP-IDF v5.4.4, performance optimization, and Wi-Fi and Bluetooth disabled. Each run checks **256/256 predictions against its Python reference** before timing, then uses 100 warm-ups and 2,000 timed batches of 64 predictions. The 256-row subset checks implementation parity; the full test split supplies the quality values above.
 
 ## Task and models
 
@@ -45,9 +51,9 @@ These accuracy and macro F1 values come from Python on 3,000 synthetic test rows
 
 - **Build:** `benchmark/measure_flash.py` builds baseline, rule, logistic, tree, and MLP separately with the same dataset and measurement harness. Flash Δ is the sum of flashed ELF sections minus the baseline. Static RAM Δ is `.data + .bss` minus the same baseline. Both include small predictor selection differences and are not pure parameter sizes. [Build CSV](results/flash_size.csv).
 - **Hardware correctness:** Before timing, the board checks all 256 C predictions against the Python oracle. A mismatch aborts the run. The board also reports labels, correct count, confusion matrix, accuracy input, and checksum.
-- **Hardware latency:** `esp_timer_get_time()` brackets only the C predictor call. There are 100 warm-up calls and 10,000 timed calls, cycling over all 256 samples. No serial output, allocation, or logging occurs in the timed interval. The volatile checksum keeps predictions observable. The reported min, mean, p50, p95, p99, and max include timer-call overhead and 1 µs clock quantization; no overhead is subtracted.
-- **Runtime RAM:** 8-bit free heap before and after inference and the minimum free heap since boot are reported separately. The predictor has no dynamic allocation. The main task stack high-water mark is in **bytes** in ESP-IDF 5.4.4; estimated peak is configured stack minus minimum remaining. It covers the task through the measurement, not a model-only stack frame.
-- **Environment:** One model is linked per build. The firmware does not initialize Wi-Fi or Bluetooth. CPU frequency, ESP-IDF version, optimization, logging level, source hash, model hash, configuration hash, upstream Git commit, dataset hash, and run settings are printed by the board. The host parser rejects incomplete logs and dataset mismatches. This is an isolated compute benchmark, not full application latency.
+- **Hardware latency:** Each timed batch calls the C predictor 64 times, then divides the batch duration by 64. There are 2,000 batches and 100 warm-up calls, cycling over all 256 samples. Interrupts remain enabled. No serial output, allocation, or logging occurs inside a batch. The reported min, mean, p50, p95, p99, and max are per-inference microseconds with fractional precision; p50/p95/p99 are percentiles of batch averages. Timer overhead is included.
+- **Runtime RAM:** 8-bit free heap before and after inference and the minimum free heap since boot are reported separately. The top table's inference heap allocation is the before/after difference; it is not the since-boot peak. The main task stack high-water mark is retained in the machine-readable result as a task-level diagnostic, not used as a model metric.
+- **Environment:** One model is linked per build. The firmware does not initialize Wi-Fi or Bluetooth. CPU frequency, ESP-IDF version, optimization, logging level, Git commit and dirty state, source hash, model hash, configuration hash, dataset hash, and run settings are printed by the board. The host parser rejects incomplete logs, dataset mismatches, and build-size records from another build. This is an isolated compute benchmark, not full application latency.
 
 See [methodology](docs/methodology.md) and [hardware protocol](docs/hardware_protocol.md) for exact definitions and commands.
 
@@ -59,14 +65,13 @@ Use an ESP-IDF v5.4+ shell and Python dependencies from `requirements.txt`:
 python -m pytest tests/ -q
 python training/export_models.py
 python benchmark/export_dataset.py
-python benchmark/measure_flash.py
 python benchmark/run_benchmark.py
 python benchmark/run_hardware.py --port /dev/cu.usbmodemYOURBOARD --runs 3
 python benchmark/plot_hardware.py
 python benchmark/update_readme.py
 ```
 
-`run_hardware.py` builds, flashes, resets, captures serial, validates the records, and writes `results/hardware/hardware_benchmark.csv`, `hardware_metadata.json`, and `raw_serial_logs/`. For an existing capture use `python benchmark/parse_hardware_log.py serial.log`. `idf.py -DTINYEDGEBENCH_MODEL=rule build` (or `logistic`, `tree`, `mlp`) builds one model manually. `baseline` is only a resource sizing reference.
+Commit code and start from a clean working tree before running `run_hardware.py`. It measures Flash, builds, flashes, resets, captures serial, validates the records, and writes `results/flash_size.csv`, `results/hardware/hardware_benchmark.csv`, `hardware_metadata.json`, and sanitized `raw_serial_logs/`. `--allow-dirty` permits exploratory runs and marks them ineligible for the README table. For an existing capture use `python benchmark/parse_hardware_log.py serial.log --build-sizes results/flash_size.csv`. `idf.py -DTINYEDGEBENCH_MODEL=rule build` (or `logistic`, `tree`, `mlp`) builds one model manually. `baseline` is only a resource sizing reference.
 
 ## Limits
 
@@ -74,7 +79,7 @@ python benchmark/update_readme.py
 - Power and energy: **Not measured yet**; no current-measurement instrument was identified.
 - FP32 only, one dataset and seed, one board configuration. INT8 is deferred until this FP32 baseline is stable.
 - The 256-row hardware subset is not the full 3,000-row test split, so its accuracy differs from offline accuracy.
-- At microsecond scale, timer resolution and overhead limit latency comparisons between close models. Repeated runs and p95/p99 expose some scheduling variation; interrupts are not disabled.
+- At microsecond scale, timer overhead and interrupt activity still limit latency comparisons between close models. Batching improves timing resolution but does not give a per-call tail latency.
 
 The existing [offline accuracy/Flash plot](results/accuracy_vs_model_size.png) and [confusion matrices](results/confusion_matrices.png) remain available. Hardware plots are generated only from validated runs in `results/hardware/`.
 
