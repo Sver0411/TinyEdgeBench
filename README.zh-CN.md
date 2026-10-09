@@ -1,12 +1,39 @@
-# TinyEdgeBench v0.3
+<h1 align="center">TinyEdgeBench</h1>
 
-[English](README.md) | **简体中文**
+<p align="center"><strong>ESP32-S3 轻量分类器与 FP32 / INT8 权衡</strong></p>
 
-TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测试集和同一块 ESP32-S3 上比较四种轻量分类器。v0.3 研究原有 Logistic 与 MLP 经过训练后 INT8 量化的实际变化；Rule 和 Tree 继续作为控制组。已发布的 v0.2 证据保留在下方及 [`v0.2` 标签](https://github.com/Sver0411/TinyEdgeBench/tree/v0.2)。
+<p align="center">共享数据 · 量化比较 · 资源实测</p>
 
-## v0.3：FP32 与 INT8
+---
 
-便携式标量 INT8 使用仅来自训练集的校准、INT8 权重和激活、int32 累加，以及隐藏层整数定点重标定。输入 StandardScaler 预处理仍使用 FP32。六种实现采用相同数据、ESP32-S3 和批次计时协议。主表延迟是**未扣除 baseline 的原始值**。
+<p align="center">
+  <a href="#project-overview">概览</a> ·
+  <a href="#研究问题与方法">方法</a> ·
+  <a href="#实现与测量状态">验证状态</a> ·
+  <a href="#relationship-to-smart-agriculture-edge-ai">主项目关联</a> ·
+  <a href="README.md">English</a>
+</p>
+
+---
+
+<a id="project-overview"></a>
+
+TinyEdgeBench 在共享数据的传感器窗口任务上比较 Rule、Logistic、Tree 和 MLP，并在真实 ESP32-S3 上测量资源与延迟。v0.3 研究 Logistic 和 MLP 训练后 INT8 量化的 Flash、速度与准确率权衡；Rule 和 Tree 保持原生实现作为控制组。
+
+## 研究问题与方法
+
+更小的数值表示能否改善实际 MCU 推理？任务将包含 8 个传感器读数的窗口分为 `NORMAL`、`RAPID_CHANGE`、`SLOW_DRIFT` 或 `NOISY`。共享的 8 维特征为温度、湿度、光照、三个最新变化量、`motion` 和 `drift`。
+
+| 模型 | 实现 |
+| --- | --- |
+| Rule | 对 motion 和 drift 使用 5 个固定阈值 |
+| Logistic | StandardScaler + 多类别逻辑回归 |
+| Tree | 最大深度 5 的决策树，导出为分支代码 |
+| MLP | StandardScaler + 8→8→8→4 ReLU 网络 |
+
+数据集有 20,000 条合成数据（seed 42），同一序列不跨划分。准确率和 Macro F1 来自完整的 3,000 条测试样本；共享的 256 条板端子集用于 C/Python 预测一致性检查。尚未测量真实农业数据准确率。
+
+## 主要结果：v0.3 FP32 / INT8
 
 <!-- V03_MAIN_START -->
 | Model | Precision | Test accuracy | Macro F1 | Flash Δ | Raw params | Raw p50 µs | Raw p95 µs |
@@ -19,8 +46,6 @@ TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测
 | MLP | INT8 | 0.8220 | 0.8178 | 1,104 B | 354 B | 13.750 ± 0.000 | 13.875 ± 0.000 |
 <!-- V03_MAIN_END -->
 
-### 量化效果
-
 <!-- V03_COMPARE_START -->
 | Pair | Δ accuracy | Δ Macro F1 | Flash saving | Raw p50 change |
 | --- | ---: | ---: | ---: | ---: |
@@ -28,11 +53,57 @@ TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测
 | Mlp INT8 − FP32 | -0.0030 | -0.0036 | +292 B (+20.9%) | +5.391 µs (+64.5%) |
 <!-- V03_COMPARE_END -->
 
-[v0.3 量化方法](docs/quantization_methodology.md)定义了校准、舍入、饱和、整数累加、存储计数及成对 timing baseline 扣除。每类 F1 和混淆矩阵保存在 `results/v0.3/`。功耗与真实传感器准确率：**Not measured yet**。
+**当前便携式标量 INT8 实现节省 Flash，但推理更慢。** Logistic 保持完整测试集准确率，Macro F1 略降；MLP 的准确率和 F1 均下降。Tree 的原始批次平均延迟最低，FP32 Logistic 的准确率和 Macro F1 最高。这些结论仅描述当前开发板、任务与编译配置，不能推广至所有 INT8 运行时。
 
-在这项任务与 ESP32-S3 配置下，两种标量 INT8 实现均节省了编译 Flash，但原始推理延迟增加。Logistic 保持完整测试集准确率，Macro F1 略降；MLP 的准确率和 Macro F1 都有所下降。本次构建六种实现的 Static RAM Δ 与推理堆分配量均为 0 B，这不代表模型不占 RAM。成对 timing baseline 与扣除后的数值保存在[硬件结果 CSV](results/v0.3/hardware_benchmark.csv)。另见[四张 v0.3 图](results/v0.3/plots/)及[整数核心反汇编检查](results/v0.3/integer_core_evidence.txt)。
+Flash Δ 是相对 v0.3 无模型框架的编译 Flash 段差值，原始参数是导出常数。本次构建六种实现的 Static RAM Δ 和推理堆分配量均为 0 B，不等于不占 RAM。详见[完整硬件结果](results/v0.3/hardware_benchmark.csv)、[v0.3 渲染图](results/v0.3/plots/)和[整数核心证据](results/v0.3/integer_core_evidence.txt)。
 
-## 已归档的 v0.2 FP32 基线
+## 实现与测量状态
+
+- Logistic 和 MLP 均有 FP32、INT8 C 实现。校准只使用训练集；INT8 权重与激活使用 int32 累加、隐藏层整数定点重标定。输入 StandardScaler 预处理仍使用 FP32，未评估优化的 ESP-NN/TFLM 内核。
+- 真机计时使用 ESP32-S3 160 MHz、ESP-IDF v5.4.4、performance 优化，关闭 Wi-Fi/蓝牙。每种实现运行三次，计时前核对 256/256 条预测，再预热 100 次，执行 2,000 批、每批 64 次推理。
+- 表中是未扣 baseline 的单次推理批次平均原始延迟，包含预处理与计时器开销。百分位数属于批次平均值，不是单次调用尾延迟；成对 timing baseline 与扣除值保存在 CSV 中。
+- Flash/静态 RAM 来自编译，延迟/堆来自真机，准确率/F1 来自合成数据完整测试集。功耗、能耗及有标签的真实传感器准确率尚未测量。
+
+精确定义见[量化方法](docs/quantization_methodology.md)、[测量方法](docs/methodology.md)和[硬件流程](docs/hardware_protocol.md)。
+
+## 快速开始与复现
+
+在仓库根目录准备主机环境并导出模型：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python training/export_models.py
+python training/quantize.py
+python benchmark/export_dataset.py
+python benchmark/run_benchmark.py
+```
+
+重复 v0.3 真机测量需要 ESP-IDF v5.4+ 环境、已连接的 ESP32-S3 和干净的代码提交：
+
+```bash
+python benchmark/v03_run_hardware.py --port /dev/cu.usbmodemYOURBOARD --runs 3
+python benchmark/plot_v03.py
+python benchmark/update_readme_v03.py
+```
+
+正式结果写入 `results/v0.3/`；`--allow-dirty` 仅用于探索测量。完整流程见[量化指南](docs/quantization_methodology.md)。`benchmark/update_readme.py` 只更新归档的 v0.2/离线区域；`benchmark/update_readme_v03.py` 更新当前比较。
+
+## Relationship to Smart-Agriculture-Edge-AI
+
+[Smart-Agriculture-Edge-AI](https://github.com/Sver0411/Smart-Agriculture-Edge-AI) 将 TinyEdgeBench 作为轻量模型与资源评估参考。这些独立计算基准与主系统固件不同，不代表主系统的板端性能。
+
+## 局限与后续工作
+
+当前仅覆盖一个合成数据集和 seed、一种板端配置，以及标量 FP32/INT8 实现。真实农业数据、功耗/能耗测量及优化整数内核属于后续方向。微秒级计时受到计时开销和中断影响；子集准确率与完整测试集准确率分开记录。
+
+## v0.2 历史证据
+
+v0.2 FP32 结果保留于 [`v0.2` 标签](https://github.com/Sver0411/TinyEdgeBench/tree/v0.2)及下方。**v0.2 和 v0.3 使用不同的资源测量框架**，不能把跨版本 Flash 差值归因于量化，应使用上方 v0.3 的成对比较。
+
+<details>
+<summary>展开 v0.2 FP32 真机与离线结果表</summary>
 
 <!-- HARDWARE_TABLE_START -->
 | Model | Accuracy (3,000) | Macro F1 (3,000) | Flash Δ | Static RAM Δ | Inference heap alloc | p50 µs | p95 µs | p99 µs |
@@ -43,30 +114,7 @@ TinyEdgeBench 在同一传感器窗口任务、同一组 8 维特征、同一测
 | MLP | 0.8250 | 0.8214 | 944 B | 0 B | 0 B | 8.4 ± 0.0 | 8.5 ± 0.0 | 8.5 ± 0.0 |
 <!-- HARDWARE_TABLE_END -->
 
-上表的准确率与 F1 来自**完整 3,000 条合成测试样本**；Flash 和静态 RAM 来自编译；延迟和堆来自真实 ESP32-S3。256 条真机子集用于预测一致性检查，其准确率另见[真机结果](results/hardware/)；表格由 `benchmark/update_readme.py` 生成。功耗：**Not measured yet**。
-
-推理堆分配量 0 B 表示这些推理函数没有动态分配，并不表示模型不占用 RAM。
-
-## 真机验证
-
-ESP32-S3 以 160 MHz、ESP-IDF v5.4.4 和 performance 优化运行，Wi-Fi 与蓝牙均未启用。四个模型各重复三次；每次计时前均逐条核对 **256/256 条预测与 Python 参考结果一致**，然后预热 100 次，并运行 2,000 组、每组 64 次推理。256 条子集用于实现一致性检查；上方质量指标来自完整测试集。
-
-在这组合成任务与开发板配置下，Logistic 的完整测试集准确率和 Macro F1 均为四种方法中最高，新增编译 Flash 为 204 B，而本实验 MLP 为 944 B。Tree 的批次平均延迟最低。这些比较只描述当前任务和配置。
-
-## 任务与模型
-
-将最近 8 个传感器读数分为 `NORMAL`、`RAPID_CHANGE`、`SLOW_DRIFT`、`NOISY`。四种方法都使用温度、湿度、光照、三个最新变化量、`motion`、`drift`：
-
-| 模型 | 实现 |
-| --- | --- |
-| Rule | 对 motion 和 drift 使用 5 个固定阈值 |
-| Logistic | StandardScaler + 多类别逻辑回归 |
-| Tree | 最大深度 5 的决策树，导出为分支代码 |
-| MLP | StandardScaler + 8→8→8→4 ReLU 网络 |
-
-`dataset/generate.py` 使用种子 42 生成 20,000 条**合成**数据，同一序列不会跨越训练、验证和测试划分。完整测试集有 3,000 条。`benchmark/export_dataset.py` 从每类 64 条不同测试序列各取一个窗口并交错排列，导出 256 条 float32 特征、真实标签和 Python 预测参考值。四个真机构建使用完全相同的样本；不会为个别模型修改数据。
-
-## 离线结果：完整测试集
+准确率/F1 来自 3,000 条合成测试样本，Flash/静态 RAM 来自编译，延迟/堆来自真机。256 条子集的准确率另见[硬件证据](results/hardware/)。
 
 <!-- OFFLINE_TABLE_START -->
 | Model | Accuracy | Macro F1 | Raw constants |
@@ -77,44 +125,10 @@ ESP32-S3 以 160 MHz、ESP-IDF v5.4.4 和 performance 优化运行，Wi-Fi 与�
 | MLP | 0.8250 | 0.8214 | 784 B |
 <!-- OFFLINE_TABLE_END -->
 
-这些 Accuracy 和 Macro F1 来自 Python 在 3,000 条合成测试样本上的评价。原始常数只计 float32 阈值、权重、偏置和标准化参数；导出为控制流的树没有可比较的参数数组。[离线 CSV](results/benchmark.csv)与[混淆矩阵 CSV](results/confusion.csv)保存完整数据。
+原始常数统计 float32 阈值、权重、偏置和标准化参数；导出树属于控制流。[离线结果](results/benchmark.csv)、[混淆计数](results/confusion.csv)、[准确率/体积图](results/accuracy_vs_model_size.png)和[混淆矩阵图](results/confusion_matrices.png)均保留。
 
-## 指标定义
-
-- **编译：** `benchmark/measure_flash.py` 对无模型 baseline 和四个模型分别编译，保留同一数据集与测量框架。Flash Δ 为 ELF 中写入 Flash 的段总量减 baseline；静态 RAM Δ 为 `.data + .bss` 减 baseline。它们包含少量模型选择代码差异，不能当成纯参数体积。[编译结果 CSV](results/flash_size.csv)。
-- **真机正确性：** 计时前逐条核对 256 个 C 预测与 Python 参考值；不一致则中止。设备还输出标签正确数、混淆矩阵和 checksum。
-- **真机延迟：** 每个计时批次连续调用 C predictor 64 次，再将批次时间除以 64；共 2,000 批次、预热 100 次，轮流使用全部 256 条样本。中断保持开启。批次内没有串口、分配或日志。报告带小数精度的单次平均 min、mean、p50、p95、p99、max；百分位数基于批次平均值，计时器开销未扣除。
-- **运行期 RAM：** 分开报告推理前后 8-bit 可用堆及自启动以来的最小可用堆。主表的推理堆分配量是前后差值，不是自启动以来的峰值。主任务栈 high-water mark 仅保留在机器可读结果中作为任务级诊断，不作为模型指标。
-- **环境：** 每次仅链接一个模型。固件未初始化 Wi-Fi 或蓝牙。设备自动输出 CPU 频率、ESP-IDF 版本、优化级别、日志级别、Git 提交和脏状态、源码哈希、模型哈希、配置哈希、数据集哈希和运行设置。解析器拒绝不完整日志、数据集不符、编译尺寸与固件来源不符的结果。这是独立计算 benchmark，不代表完整应用延迟。
-
-详见[实验方法](docs/methodology.md)和[硬件操作说明](docs/hardware_protocol.md)。
-
-## 复现
-
-使用 ESP-IDF v5.4+ 环境及 `requirements.txt` 中的 Python 依赖：
-
-```bash
-python -m pytest tests/ -q
-python training/export_models.py
-python benchmark/export_dataset.py
-python benchmark/run_benchmark.py
-python benchmark/run_hardware.py --port /dev/cu.usbmodemYOURBOARD --runs 3
-python benchmark/plot_hardware.py
-python benchmark/update_readme.py
-```
-
-先提交代码并确保工作区干净，再运行 `run_hardware.py`。它测量 Flash、编译、刷机、重启、读取串口、校验记录，并写入 `results/flash_size.csv`、`results/hardware/hardware_benchmark.csv`、`hardware_metadata.json` 和已清理设备标识的 `raw_serial_logs/`。`--allow-dirty` 只用于探索性测量，不能进入 README 表格。已有日志可用 `python benchmark/parse_hardware_log.py serial.log --build-sizes results/flash_size.csv` 解析。手动单模型构建可使用 `idf.py -DTINYEDGEBENCH_MODEL=rule build`，或改为 `logistic`、`tree`、`mlp`。`baseline` 仅用于资源差值计算。
-
-## 局限
-
-- 标签与准确率来自合成数据；真实传感器轨迹和有可靠标签的真实环境准确率：**Not measured yet**。
-- 功耗、能耗：**Not measured yet**；目前未发现可靠电流测量仪器。
-- 仅 FP32、单数据集、单 seed、单板配置。INT8 留到 FP32 基准稳定之后。
-- 256 条真机子集与 3,000 条完整测试集不同，因此两个准确率不一定相同。
-- 批次计时提高了分辨率，但计时开销和中断活动仍会影响相近模型的对比；批次百分位数不等于单次调用尾延迟。
-
-保留原有[离线准确率与 Flash 图](results/accuracy_vs_model_size.png)及[混淆矩阵图](results/confusion_matrices.png)。硬件图仅根据 `results/hardware/` 中已校验的结果生成。
+</details>
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+MIT — 见 [LICENSE](LICENSE)。
