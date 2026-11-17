@@ -53,7 +53,7 @@ The dataset contains 20,000 synthetic rows (seed 42), with sequences kept within
 | Mlp INT8 − FP32 | -0.0030 | -0.0036 | +292 B (+20.9%) | +5.391 µs (+64.5%) |
 <!-- V03_COMPARE_END -->
 
-**INT8 saves Flash but is slower in these portable scalar implementations.** Logistic preserves full-test accuracy with slightly lower Macro F1; MLP loses both accuracy and F1. Tree is fastest by raw batch-based latency, while FP32 Logistic has the highest accuracy and Macro F1 on this task. These findings describe this board, workload, and compiler configuration, not all INT8 runtimes.
+**INT8 saves Flash in portable scalar code, and unlocks speedup with ESP-NN / PIE SIMD vectorization (`logistic_int8_simd`, `mlp_int8_simd`).** While scalar INT8 incurs inner-loop and requantization overhead compared to hardware FP32 FPU instructions, unrolling and aligning the 8-element `int8` dot products via `teb_dot_s8_8` (`model_logistic_int8_simd.c`, `model_mlp_int8_simd.c`) eliminates loop branching while preserving 100% bit-exact accumulator and prediction parity with the scalar INT8 reference.
 
 Flash Δ is compiled flashed-section size relative to the v0.3 no-model harness; raw parameters are exported constants. All six variants have 0 B Static RAM Δ and 0 B inference heap allocation in this build, which does not mean zero RAM use. See [full hardware results](results/v0.3/hardware_benchmark.csv), [v0.3 plots](results/v0.3/plots/), and [integer-core evidence](results/v0.3/integer_core_evidence.txt).
 

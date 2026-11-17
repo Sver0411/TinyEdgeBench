@@ -38,5 +38,7 @@ int predict_tree(const float *features);
 int predict_mlp(const float *features);
 int predict_logistic_int8(const float *features);
 int predict_mlp_int8(const float *features);
+int predict_logistic_int8_simd(const float *features);
+int predict_mlp_int8_simd(const float *features);
 
 #endif /* MODEL_API_H */

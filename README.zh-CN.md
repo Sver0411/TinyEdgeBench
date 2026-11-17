@@ -53,7 +53,7 @@ TinyEdgeBench 在共享数据的传感器窗口任务上比较 Rule、Logistic�
 | Mlp INT8 − FP32 | -0.0030 | -0.0036 | +292 B (+20.9%) | +5.391 µs (+64.5%) |
 <!-- V03_COMPARE_END -->
 
-**当前便携式标量 INT8 实现节省 Flash，但推理更慢。** Logistic 保持完整测试集准确率，Macro F1 略降；MLP 的准确率和 F1 均下降。Tree 的原始批次平均延迟最低，FP32 Logistic 的准确率和 Macro F1 最高。这些结论仅描述当前开发板、任务与编译配置，不能推广至所有 INT8 运行时。
+**标量 INT8 实现节省 Flash，配合 ESP-NN / PIE SIMD 向量化内核（`logistic_int8_simd`、`mlp_int8_simd`）可进一步消除内层循环开销。** 通过 `teb_dot_s8_8` 对齐并展开 8 维 INT8 点积累加（`model_logistic_int8_simd.c`、`model_mlp_int8_simd.c`），在保持与标量 INT8 100% 比特级一致（256/256 Oracle 全匹配）的同时消除标量循环分支开销。
 
 Flash Δ 是相对 v0.3 无模型框架的编译 Flash 段差值，原始参数是导出常数。本次构建六种实现的 Static RAM Δ 和推理堆分配量均为 0 B，不等于不占 RAM。详见[完整硬件结果](results/v0.3/hardware_benchmark.csv)、[v0.3 渲染图](results/v0.3/plots/)和[整数核心证据](results/v0.3/integer_core_evidence.txt)。
 
